@@ -2,82 +2,84 @@
 //  ContentView.swift
 //  Aerospace
 //
-//  Created by Nitesh Banskota on 3/7/2026.
+//  Root view: a three-tab interface (Logs, Statistics, Settings) with a
+//  persistent server-status bar along the bottom.
 //
 
 import SwiftUI
-import CoreData
 
 struct ContentView: View {
-    @Environment(\.managedObjectContext) private var viewContext
-
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Item.timestamp, ascending: true)],
-        animation: .default)
-    private var items: FetchedResults<Item>
+    @EnvironmentObject private var store: LogStore
 
     var body: some View {
-        NavigationView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp!, formatter: itemFormatter)")
-                    } label: {
-                        Text(item.timestamp!, formatter: itemFormatter)
-                    }
-                }
-                .onDelete(perform: deleteItems)
-            }
-            .toolbar {
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
-            }
-            Text("Select an item")
-        }
-    }
+        VStack(spacing: 0) {
+            TabView {
+                LogsView()
+                    .tabItem { Label("Logs", systemImage: "doc.text") }
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
+                StatisticsView()
+                    .tabItem { Label("Stats", systemImage: "chart.bar") }
 
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
+                SettingsView()
+                    .tabItem { Label("Settings", systemImage: "gearshape") }
             }
-        }
-    }
 
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            offsets.map { items[$0] }.forEach(viewContext.delete)
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
+            Divider()
+            ServerStatusBar()
         }
     }
 }
 
-private let itemFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .short
-    formatter.timeStyle = .medium
-    return formatter
-}()
+/// A compact status bar showing the server state, port, and total log count.
+struct ServerStatusBar: View {
+    @EnvironmentObject private var store: LogStore
+
+    private var indicatorColor: Color {
+        switch store.serverState {
+        case .running: return .green
+        case .starting: return .yellow
+        case .failed: return .red
+        case .stopped: return .secondary
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(indicatorColor)
+                .frame(width: 9, height: 9)
+            Text(store.serverState.description)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            Label("\(store.totalStored)", systemImage: "tray.full")
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .help("Total logs stored")
+
+            if store.serverState.isRunning {
+                Button {
+                    store.stopServer()
+                } label: {
+                    Label("Stop", systemImage: "stop.fill")
+                }
+            } else {
+                Button {
+                    store.startServer()
+                } label: {
+                    Label("Start", systemImage: "play.fill")
+                }
+            }
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(.bar)
+    }
+}
 
 #Preview {
-    ContentView().environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+    ContentView().environmentObject(LogStore())
 }

@@ -2,20 +2,28 @@
 //  AerospaceApp.swift
 //  Aerospace
 //
-//  Created by Nitesh Banskota on 3/7/2026.
+//  Entry point. Owns the shared LogStore and starts the HTTP log server
+//  when the app launches.
 //
 
 import SwiftUI
-import CoreData
 
 @main
 struct AerospaceApp: App {
-    let persistenceController = PersistenceController.shared
+    @StateObject private var store = LogStore()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                .environmentObject(store)
+                .frame(minWidth: 900, minHeight: 560)
+                .onAppear { store.startServer() }
+        }
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Restart Server") { store.restartServer() }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
+            }
         }
     }
 }

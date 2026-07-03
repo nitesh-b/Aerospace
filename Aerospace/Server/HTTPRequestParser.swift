@@ -27,8 +27,10 @@ nonisolated enum HTTPParseError: Error, Equatable {
 }
 
 /// Feed bytes with `append(_:)`; call `takeRequest()` to pull a complete
-/// request when one is available. Not thread-safe; use one per connection.
-nonisolated final class HTTPRequestParser {
+/// request when one is available. Not internally synchronized: use one per
+/// connection and only from that connection's serial queue. `@unchecked
+/// Sendable` reflects that single-queue confinement.
+nonisolated final class HTTPRequestParser: @unchecked Sendable {
     private var buffer = Data()
     private let maxBodySize: Int
 
