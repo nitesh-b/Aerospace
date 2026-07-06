@@ -17,6 +17,9 @@ nonisolated struct LogEvent: Identifiable, Codable, Hashable, Sendable {
     let level: LogLevel
     let sessionId: String?
     let application: String?
+    /// Where in the source application the log originated, e.g. a view or
+    /// screen name like "Home screen".
+    let component: String?
 
     init(
         id: UUID = UUID(),
@@ -26,7 +29,8 @@ nonisolated struct LogEvent: Identifiable, Codable, Hashable, Sendable {
         payload: String,
         level: LogLevel = .info,
         sessionId: String? = nil,
-        application: String? = nil
+        application: String? = nil,
+        component: String? = nil
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -36,6 +40,7 @@ nonisolated struct LogEvent: Identifiable, Codable, Hashable, Sendable {
         self.level = level
         self.sessionId = sessionId
         self.application = application
+        self.component = component
     }
 
     /// A single-line, truncated preview of the payload for list rows.

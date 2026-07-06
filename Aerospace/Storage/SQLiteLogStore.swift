@@ -75,11 +75,24 @@ nonisolated final class SQLiteLogStore: @unchecked Sendable {
             payload TEXT NOT NULL,
             level TEXT NOT NULL DEFAULT 'info',
             session_id TEXT,
-            application TEXT
+            application TEXT,
+            component TEXT
         );
         """)
         try exec("CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);")
         try exec("CREATE INDEX IF NOT EXISTS idx_logs_category ON logs(category, subcategory);")
+        migrate()
+    }
+
+    /// Additive migrations for databases created by earlier versions.
+    /// `ADD COLUMN` fails harmlessly if the column already exists.
+    private func migrate() {
+        let additions = [
+            "ALTER TABLE logs ADD COLUMN component TEXT;",
+        ]
+        for statement in additions {
+            _ = sqlite3_exec(db, statement, nil, nil, nil)
+        }
     }
 
     // MARK: - Writes
@@ -95,8 +108,8 @@ nonisolated final class SQLiteLogStore: @unchecked Sendable {
             do {
                 let sql = """
                 INSERT OR REPLACE INTO logs
-                (id, timestamp, category, subcategory, payload, level, session_id, application)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                (id, timestamp, category, subcategory, payload, level, session_id, application, component)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """
                 let stmt = try prepare(sql)
                 defer { sqlite3_finalize(stmt) }
@@ -111,6 +124,7 @@ nonisolated final class SQLiteLogStore: @unchecked Sendable {
                     bindText(stmt, 6, event.level.rawValue)
                     bindText(stmt, 7, event.sessionId)
                     bindText(stmt, 8, event.application)
+                    bindText(stmt, 9, event.component)
                     guard sqlite3_step(stmt) == SQLITE_DONE else {
                         throw SQLiteError.step(lastMessage())
                     }
@@ -152,8 +166,10 @@ nonisolated final class SQLiteLogStore: @unchecked Sendable {
             }
             if let search = query.searchText?.trimmingCharacters(in: .whitespacesAndNewlines),
                !search.isEmpty {
-                conditions.append("(payload LIKE ? OR category LIKE ? OR subcategory LIKE ?)")
+                conditions.append(
+                    "(payload LIKE ? OR category LIKE ? OR subcategory LIKE ? OR component LIKE ?)")
                 let pattern = "%\(search)%"
+                addParam(pattern)
                 addParam(pattern)
                 addParam(pattern)
                 addParam(pattern)
@@ -161,7 +177,7 @@ nonisolated final class SQLiteLogStore: @unchecked Sendable {
 
             let whereClause = conditions.isEmpty ? "" : "WHERE " + conditions.joined(separator: " AND ")
             let sql = """
-            SELECT id, timestamp, category, subcategory, payload, level, session_id, application
+            SELECT id, timestamp, category, subcategory, payload, level, session_id, application, component
             FROM logs \(whereClause)
             ORDER BY timestamp DESC
             LIMIT \(max(1, query.limit));
@@ -262,9 +278,11 @@ nonisolated final class SQLiteLogStore: @unchecked Sendable {
         let level = LogLevel(rawValue: columnText(stmt, 5) ?? "info") ?? .info
         let sessionId = columnText(stmt, 6)
         let application = columnText(stmt, 7)
+        let component = columnText(stmt, 8)
         return LogEvent(
             id: id, timestamp: timestamp, category: category, subCategory: subCategory,
-            payload: payload, level: level, sessionId: sessionId, application: application
+            payload: payload, level: level, sessionId: sessionId, application: application,
+            component: component
         )
     }
 

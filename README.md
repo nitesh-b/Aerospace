@@ -6,7 +6,7 @@ to SQLite, and displays them in a real-time interface.
 
 ## Features
 
-- **Local HTTP server** on a configurable port (default `8080`), built on
+- **Local HTTP server** on a configurable port (default `57333`), built on
   Apple's `Network` framework — **no third-party dependencies**.
 - **Three-argument logging API**: `arg1` → category, `arg2` → subcategory,
   `arg3` → arbitrary JSON payload.
@@ -45,7 +45,7 @@ incoming connections.
 ### Endpoint
 
 ```
-POST http://localhost:8080/log
+POST http://localhost:57333/log
 Content-Type: application/json
 ```
 
@@ -66,19 +66,20 @@ Content-Type: application/json
 `arg3` may be a JSON object, array, string, number, or boolean. Objects are
 inspected for these optional fields (which may also appear at the top level):
 
-| Field         | Meaning                                    |
-| ------------- | ------------------------------------------ |
-| `level`       | `debug` / `info` / `warning` / `error` / `critical` (aliases accepted) |
-| `sessionId`   | Session identifier (`session_id` also accepted) |
-| `application` | Source application name (`app` also accepted) |
+| Field         | Meaning                                                                                                  |
+| ------------- | -------------------------------------------------------------------------------------------------------- |
+| `level`       | `debug` / `info` / `warning` / `error` / `critical` (aliases accepted)                                   |
+| `sessionId`   | Session identifier (`session_id` also accepted)                                                          |
+| `application` | Source application name (`app` also accepted)                                                            |
+| `component`   | Where in the app the log originated, e.g. a view/screen name like `"Home screen"` (`comp` also accepted) |
 
 ### Responses
 
-| Status | When |
-| ------ | ---- |
-| `200`  | Log accepted — body `{"status":"ok","id":"…"}` |
+| Status | When                                               |
+| ------ | -------------------------------------------------- |
+| `200`  | Log accepted — body `{"status":"ok","id":"…"}`     |
 | `400`  | Missing `arg1`/`arg2`, empty body, or invalid JSON |
-| `404`  | Unknown route |
+| `404`  | Unknown route                                      |
 
 A `GET /health` endpoint returns `{"status":"healthy"}`.
 
@@ -87,7 +88,7 @@ A `GET /health` endpoint returns `{"status":"healthy"}`.
 **curl**
 
 ```sh
-curl -X POST http://localhost:8080/log \
+curl -X POST http://localhost:57333/log \
   -H 'Content-Type: application/json' \
   -d '{"arg1":"Payments","arg2":"Refund","arg3":{"amount":50,"level":"warning"}}'
 ```
@@ -97,7 +98,7 @@ curl -X POST http://localhost:8080/log \
 ```swift
 func Log(_ category: String, _ subCategory: String, _ payload: [String: Any]) {
     let body: [String: Any] = ["arg1": category, "arg2": subCategory, "arg3": payload]
-    var request = URLRequest(url: URL(string: "http://localhost:8080/log")!)
+    var request = URLRequest(url: URL(string: "http://localhost:57333/log")!)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.httpBody = try? JSONSerialization.data(withJSONObject: body)
@@ -110,10 +111,14 @@ Log("Authentication", "Login", ["userId": 123, "status": "success"])
 **Node.js**
 
 ```js
-fetch("http://localhost:8080/log", {
+fetch("http://localhost:57333/log", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ arg1: "API", arg2: "Request", arg3: { path: "/users" } }),
+  body: JSON.stringify({
+    arg1: "API",
+    arg2: "Request",
+    arg3: { path: "/users" },
+  }),
 });
 ```
 
@@ -136,7 +141,8 @@ CREATE TABLE logs (
     payload TEXT NOT NULL,
     level TEXT NOT NULL DEFAULT 'info',
     session_id TEXT,
-    application TEXT
+    application TEXT,
+    component TEXT
 );
 ```
 

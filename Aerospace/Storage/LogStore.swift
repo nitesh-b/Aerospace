@@ -59,7 +59,7 @@ final class LogStore: ObservableObject {
 
     init(store: SQLiteLogStore? = nil, defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.port = UInt16(defaults.object(forKey: Keys.port) as? Int ?? 8080)
+        self.port = UInt16(defaults.object(forKey: Keys.port) as? Int ?? 57333)
         self.retentionDays = defaults.object(forKey: Keys.retentionDays) as? Int ?? 7
         self.autoPurgeEnabled = defaults.object(forKey: Keys.autoPurge) as? Bool ?? false
 
@@ -138,7 +138,7 @@ final class LogStore: ObservableObject {
         if let minLevel = query.minLevel, event.level < minLevel { return false }
         if let search = query.searchText?.trimmingCharacters(in: .whitespacesAndNewlines),
            !search.isEmpty {
-            let haystack = "\(event.category) \(event.subCategory) \(event.payload)".lowercased()
+            let haystack = "\(event.category) \(event.subCategory) \(event.component ?? "") \(event.payload)".lowercased()
             if !haystack.contains(search.lowercased()) { return false }
         }
         return true
@@ -202,7 +202,7 @@ final class LogStore: ObservableObject {
     }
 
     func exportCSV() -> Data {
-        var rows = ["id,timestamp,category,subcategory,level,session_id,application,payload"]
+        var rows = ["id,timestamp,category,subcategory,level,session_id,application,component,payload"]
         let formatter = ISO8601DateFormatter()
         let events = store.fetch(LogQuery(limit: statisticsLimit))
         for e in events {
@@ -214,6 +214,7 @@ final class LogStore: ObservableObject {
                 e.level.rawValue,
                 e.sessionId ?? "",
                 e.application ?? "",
+                e.component ?? "",
                 e.payload,
             ].map(Self.csvEscape)
             rows.append(fields.joined(separator: ","))

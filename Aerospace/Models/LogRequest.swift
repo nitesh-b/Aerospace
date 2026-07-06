@@ -75,6 +75,11 @@ nonisolated enum LogRequest {
             string(payloadObject?["app"]) ??
             string(dict["application"]) ??
             string(dict["app"])
+        let component =
+            string(payloadObject?["component"]) ??
+            string(payloadObject?["comp"]) ??
+            string(dict["component"]) ??
+            string(dict["comp"])
 
         return LogEvent(
             timestamp: timestamp,
@@ -83,7 +88,8 @@ nonisolated enum LogRequest {
             payload: payloadString,
             level: level,
             sessionId: sessionId,
-            application: application
+            application: application,
+            component: component
         )
     }
 

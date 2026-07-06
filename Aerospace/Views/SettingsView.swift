@@ -35,7 +35,7 @@ struct SettingsView: View {
             HStack {
                 Text("Port")
                 Spacer()
-                TextField("8080", text: $portText)
+                TextField("57333", text: $portText)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 90)
                     .multilineTextAlignment(.trailing)

@@ -160,6 +160,14 @@ private struct LogRow: View {
                     Text(event.category).fontWeight(.semibold)
                     Text("›").foregroundStyle(.tertiary)
                     Text(event.subCategory).foregroundStyle(.secondary)
+                    if let component = event.component {
+                        Label(component, systemImage: "macwindow")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(Color(nsColor: .controlBackgroundColor), in: Capsule())
+                    }
                     Spacer()
                     Text(event.timestamp, format: .dateTime.hour().minute().second())
                         .font(.caption.monospacedDigit())
@@ -197,6 +205,9 @@ private struct LogDetailView: View {
                     .font(.title3.weight(.semibold))
 
                 HStack(spacing: 16) {
+                    if let component = event.component {
+                        metaField("Component", component, systemImage: "macwindow")
+                    }
                     if let app = event.application {
                         metaField("App", app, systemImage: "app.badge")
                     }

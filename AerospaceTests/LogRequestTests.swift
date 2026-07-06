@@ -36,6 +36,32 @@ final class LogRequestTests: XCTestCase {
         XCTAssertEqual(event.application, "DesktopClient")
     }
 
+    func testExtractsComponentFromPayload() throws {
+        let event = try LogRequest.makeEvent(from: body("""
+        {"arg1":"UI","arg2":"Tap","arg3":{"component":"Home screen"}}
+        """))
+        XCTAssertEqual(event.component, "Home screen")
+    }
+
+    func testComponentAliasAndTopLevelFallback() throws {
+        let aliased = try LogRequest.makeEvent(from: body("""
+        {"arg1":"UI","arg2":"Tap","arg3":{"comp":"Settings screen"}}
+        """))
+        XCTAssertEqual(aliased.component, "Settings screen")
+
+        let topLevel = try LogRequest.makeEvent(from: body("""
+        {"arg1":"UI","arg2":"Tap","arg3":"x","component":"Login screen"}
+        """))
+        XCTAssertEqual(topLevel.component, "Login screen")
+    }
+
+    func testComponentAbsentIsNil() throws {
+        let event = try LogRequest.makeEvent(from: body("""
+        {"arg1":"UI","arg2":"Tap","arg3":{}}
+        """))
+        XCTAssertNil(event.component)
+    }
+
     func testStringPayloadPreserved() throws {
         let event = try LogRequest.makeEvent(from: body("""
         {"arg1":"Cat","arg2":"Sub","arg3":"just a string"}

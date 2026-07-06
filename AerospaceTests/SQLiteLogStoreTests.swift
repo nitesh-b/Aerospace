@@ -116,7 +116,7 @@ final class SQLiteLogStoreTests: XCTestCase {
         let store = try makeStore()
         let original = LogEvent(category: "Payments", subCategory: "Refund",
                                 payload: "{\"amount\":50}", level: .warning,
-                                sessionId: "s1", application: "POS")
+                                sessionId: "s1", application: "POS", component: "Checkout screen")
         try store.insert(original)
         let fetched = try XCTUnwrap(store.fetch().first)
         XCTAssertEqual(fetched.category, original.category)
@@ -125,6 +125,20 @@ final class SQLiteLogStoreTests: XCTestCase {
         XCTAssertEqual(fetched.level, original.level)
         XCTAssertEqual(fetched.sessionId, original.sessionId)
         XCTAssertEqual(fetched.application, original.application)
+        XCTAssertEqual(fetched.component, original.component)
         XCTAssertEqual(fetched.id, original.id)
+    }
+
+    func testSearchMatchesComponentColumn() throws {
+        let store = try makeStore()
+        // Component supplied out-of-band (not in the payload string), so only
+        // the dedicated column can match it.
+        try store.insertBatch([
+            LogEvent(category: "UI", subCategory: "Tap", payload: "{}", component: "Home screen"),
+            LogEvent(category: "UI", subCategory: "Tap", payload: "{}", component: "Settings screen"),
+        ])
+        let result = store.fetch(LogQuery(searchText: "Home"))
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result.first?.component, "Home screen")
     }
 }
