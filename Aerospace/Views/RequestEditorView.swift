@@ -16,6 +16,7 @@ struct RequestEditorView: View {
         case headers = "Headers"
         case auth = "Auth"
         case body = "Body"
+        case n10 = "N10"
         var id: String { rawValue }
     }
     @State private var section: Section = .params
@@ -90,6 +91,8 @@ struct RequestEditorView: View {
             return store.editing.authKind == .bearer ? "Auth •" : "Auth"
         case .body:
             return store.editing.bodyKind == .none ? "Body" : "Body •"
+        case .n10:
+            return store.editing.n10SigningEnabled ? "N10 •" : "N10"
         }
     }
 
@@ -108,6 +111,8 @@ struct RequestEditorView: View {
             authEditor
         case .body:
             bodyEditor
+        case .n10:
+            n10Editor
         }
     }
 
@@ -163,6 +168,68 @@ struct RequestEditorView: View {
                     .frame(minHeight: 160)
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
             }
+        }
+    }
+
+    private var n10Editor: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle("Sign requests with N10 HMAC", isOn: $store.editing.n10SigningEnabled)
+                .toggleStyle(.switch)
+
+            if store.editing.n10SigningEnabled {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("API Key").font(.caption).foregroundStyle(.secondary)
+                    SecureField("Hex-encoded N10 API key", text: $store.n10APIKey)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                    Label("Stored in the Keychain · shared across all requests · never sent",
+                          systemImage: "key.fill")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+
+                Divider()
+
+                Text("Device identity").font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    labeledField("App Version", text: $store.editing.n10AppVersion)
+                    labeledField("System Name", text: $store.editing.n10SystemName)
+                    labeledField("System Version", text: $store.editing.n10SystemVersion)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Headers added at send time").font(.caption).foregroundStyle(.secondary)
+                    headerPreview("User-Agent", userAgentPreview)
+                    headerPreview("X-Network-Ten-App", userAgentPreview)
+                    headerPreview("X-N10-SIG", "<unixSeconds>_<hmacSHA256(\"ts:finalURL\")>")
+                }
+                .padding(.top, 4)
+            } else {
+                Text("When on, an HMAC-SHA256 signature over the final URL and the 10play "
+                     + "identity headers are added automatically.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var userAgentPreview: String {
+        N10Signer().userAgent(.init(
+            appVersion: store.editing.n10AppVersion,
+            systemName: store.editing.n10SystemName,
+            systemVersion: store.editing.n10SystemVersion))
+    }
+
+    private func labeledField(_ label: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.caption2).foregroundStyle(.secondary)
+            TextField(label, text: text).textFieldStyle(.roundedBorder)
+        }
+    }
+
+    private func headerPreview(_ name: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(name + ":").font(.caption2.monospaced().weight(.medium))
+            Text(value).font(.caption2.monospaced()).foregroundStyle(.secondary)
+                .textSelection(.enabled)
         }
     }
 

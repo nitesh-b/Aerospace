@@ -152,6 +152,24 @@ Because the app tests arbitrary endpoints (including `http://` and localhost),
 App Transport Security is relaxed via `Aerospace/Info.plist`
 (`NSAllowsArbitraryLoads`), and the sandbox grants `network.client`.
 
+### N10 signed requests
+
+The **N10** section adds the Network Ten (10play) signed-request scheme used by
+the iOS app. When enabled, these headers are computed and attached at send time:
+
+- `X-N10-SIG: <unixSeconds>_<sig>` where
+  `sig = HMAC_SHA256("<unixSeconds>:<finalURL>", key)` as lowercase hex, and the
+  key is the **hex-decoded** N10 API key. The signature covers the final URL
+  including any query parameters.
+- `User-Agent` and `X-Network-Ten-App`, both set to
+  `10play/<appVersion> <systemName> <systemVersion> UAP`. The three device
+  values are editable per request (defaults: `iOS` / `17.0`).
+
+The API key is the HMAC secret only — it is **never sent** as a header. It is
+stored once in the macOS **Keychain** (shared across requests), not in the
+request database. The HMAC implementation is verified against the RFC 4231
+HMAC-SHA256 test vector.
+
 ## Storage
 
 Logs are stored at:

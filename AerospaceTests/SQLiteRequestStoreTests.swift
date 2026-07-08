@@ -76,6 +76,21 @@ final class SQLiteRequestStoreTests: XCTestCase {
         XCTAssertEqual(fetched.headers.first?.id, r.headers.first?.id)
     }
 
+    func testN10FieldsPersist() throws {
+        let store = try makeStore()
+        var r = request("Signed")
+        r.n10SigningEnabled = true
+        r.n10AppVersion = "3.4.1"
+        r.n10SystemName = "iPadOS"
+        r.n10SystemVersion = "17.2"
+        try store.upsert(r)
+        let fetched = try XCTUnwrap(store.fetch(id: r.id))
+        XCTAssertTrue(fetched.n10SigningEnabled)
+        XCTAssertEqual(fetched.n10AppVersion, "3.4.1")
+        XCTAssertEqual(fetched.n10SystemName, "iPadOS")
+        XCTAssertEqual(fetched.n10SystemVersion, "17.2")
+    }
+
     func testFetchByID() throws {
         let store = try makeStore()
         let r = request("A")

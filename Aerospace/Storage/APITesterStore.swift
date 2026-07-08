@@ -17,6 +17,13 @@ final class APITesterStore: ObservableObject {
     @Published private(set) var isSending = false
     @Published private(set) var lastResponse: APIResponse?
 
+    /// The app-wide N10 API key (HMAC secret). Backed by the Keychain, never
+    /// stored in the request database and never sent as a header.
+    @Published var n10APIKey: String {
+        didSet { KeychainStore.save(n10APIKey, account: Self.n10KeyAccount) }
+    }
+    private static let n10KeyAccount = "N10_API_KEY"
+
     /// The request currently shown in the editor. Edits are debounced to disk.
     @Published var editing: SavedRequest {
         didSet { if !isLoadingSelection { scheduleAutoSave() } }
@@ -35,6 +42,7 @@ final class APITesterStore: ObservableObject {
 
     init(store: SQLiteRequestStore? = nil) {
         self.store = store ?? Self.makeDefaultStore()
+        n10APIKey = KeychainStore.read(account: Self.n10KeyAccount) ?? ""
         let all = self.store.fetchAll()
         requests = all
         if let first = all.first {
@@ -143,7 +151,7 @@ final class APITesterStore: ObservableObject {
     // MARK: - Sending
 
     func send() {
-        let request: URLRequest
+        var request: URLRequest
         do {
             request = try RequestBuilder().makeURLRequest(from: editing)
         } catch {
@@ -152,6 +160,28 @@ final class APITesterStore: ObservableObject {
             )
             return
         }
+
+        // N10 signing: computed over the FINAL URL at send time.
+        if editing.n10SigningEnabled {
+            let key = n10APIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty else {
+                lastResponse = APIResponse(outcome: .failure(
+                    "N10 signing is on but no API key is set. Add it in the N10 section."))
+                return
+            }
+            let device = N10Signer.DeviceInfo(
+                appVersion: editing.n10AppVersion,
+                systemName: editing.n10SystemName,
+                systemVersion: editing.n10SystemVersion)
+            let timestamp = Int(Date().timeIntervalSince1970)
+            let signed = N10Signer().headers(
+                finalURL: request.url?.absoluteString ?? "",
+                apiKeyHex: key, device: device, timestamp: timestamp)
+            for (name, value) in signed {
+                request.setValue(value, forHTTPHeaderField: name)
+            }
+        }
+
         flushPendingSave()      // persist before sending
         sendTask?.cancel()
         isSending = true

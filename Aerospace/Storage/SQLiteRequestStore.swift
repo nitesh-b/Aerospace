@@ -52,6 +52,10 @@ nonisolated final class SQLiteRequestStore: @unchecked Sendable {
             bearer_token TEXT NOT NULL DEFAULT '',
             body_kind TEXT NOT NULL DEFAULT 'none',
             body_text TEXT NOT NULL DEFAULT '',
+            n10_enabled INTEGER NOT NULL DEFAULT 0,
+            n10_app_version TEXT NOT NULL DEFAULT '1.0',
+            n10_system_name TEXT NOT NULL DEFAULT 'iOS',
+            n10_system_version TEXT NOT NULL DEFAULT '17.0',
             created_at REAL NOT NULL,
             updated_at REAL NOT NULL
         );
@@ -60,9 +64,15 @@ nonisolated final class SQLiteRequestStore: @unchecked Sendable {
         migrate()
     }
 
-    /// Additive migrations for databases created by earlier versions.
+    /// Additive migrations for databases created by earlier versions. Each
+    /// ALTER is a no-op (harmless error, ignored) when the column already exists.
     private func migrate() {
-        let additions: [String] = []
+        let additions = [
+            "ALTER TABLE api_requests ADD COLUMN n10_enabled INTEGER NOT NULL DEFAULT 0;",
+            "ALTER TABLE api_requests ADD COLUMN n10_app_version TEXT NOT NULL DEFAULT '1.0';",
+            "ALTER TABLE api_requests ADD COLUMN n10_system_name TEXT NOT NULL DEFAULT 'iOS';",
+            "ALTER TABLE api_requests ADD COLUMN n10_system_version TEXT NOT NULL DEFAULT '17.0';",
+        ]
         for statement in additions {
             _ = sqlite3_exec(db, statement, nil, nil, nil)
         }
@@ -77,8 +87,9 @@ nonisolated final class SQLiteRequestStore: @unchecked Sendable {
                 let sql = """
                 INSERT OR REPLACE INTO api_requests
                 (id, name, method, url, query_json, headers_json, auth_kind,
-                 bearer_token, body_kind, body_text, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                 bearer_token, body_kind, body_text, n10_enabled, n10_app_version,
+                 n10_system_name, n10_system_version, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """
                 let stmt = try prepare(sql)
                 defer { sqlite3_finalize(stmt) }
@@ -92,8 +103,12 @@ nonisolated final class SQLiteRequestStore: @unchecked Sendable {
                 bindText(stmt, 8, request.bearerToken)
                 bindText(stmt, 9, request.bodyKind.rawValue)
                 bindText(stmt, 10, request.bodyText)
-                sqlite3_bind_double(stmt, 11, request.createdAt.timeIntervalSince1970)
-                sqlite3_bind_double(stmt, 12, request.updatedAt.timeIntervalSince1970)
+                sqlite3_bind_int(stmt, 11, request.n10SigningEnabled ? 1 : 0)
+                bindText(stmt, 12, request.n10AppVersion)
+                bindText(stmt, 13, request.n10SystemName)
+                bindText(stmt, 14, request.n10SystemVersion)
+                sqlite3_bind_double(stmt, 15, request.createdAt.timeIntervalSince1970)
+                sqlite3_bind_double(stmt, 16, request.updatedAt.timeIntervalSince1970)
                 guard sqlite3_step(stmt) == SQLITE_DONE else {
                     throw SQLiteError.step(lastMessage())
                 }
@@ -156,7 +171,7 @@ nonisolated final class SQLiteRequestStore: @unchecked Sendable {
     // MARK: - Row mapping
 
     private static let columns =
-        "id, name, method, url, query_json, headers_json, auth_kind, bearer_token, body_kind, body_text, created_at, updated_at"
+        "id, name, method, url, query_json, headers_json, auth_kind, bearer_token, body_kind, body_text, n10_enabled, n10_app_version, n10_system_name, n10_system_version, created_at, updated_at"
 
     private func row(from stmt: OpaquePointer?) -> SavedRequest {
         let id = UUID(uuidString: columnText(stmt, 0) ?? "") ?? UUID()
@@ -169,12 +184,19 @@ nonisolated final class SQLiteRequestStore: @unchecked Sendable {
         let bearer = columnText(stmt, 7) ?? ""
         let bodyKind = BodyKind(rawValue: columnText(stmt, 8) ?? "none") ?? .none
         let bodyText = columnText(stmt, 9) ?? ""
-        let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 10))
-        let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 11))
+        let n10Enabled = sqlite3_column_int(stmt, 10) != 0
+        let n10AppVersion = columnText(stmt, 11) ?? "1.0"
+        let n10SystemName = columnText(stmt, 12) ?? "iOS"
+        let n10SystemVersion = columnText(stmt, 13) ?? "17.0"
+        let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 14))
+        let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 15))
         return SavedRequest(
             id: id, name: name, method: method, urlString: url,
             queryParams: query, headers: headers, authKind: auth, bearerToken: bearer,
-            bodyKind: bodyKind, bodyText: bodyText, createdAt: createdAt, updatedAt: updatedAt
+            bodyKind: bodyKind, bodyText: bodyText,
+            n10SigningEnabled: n10Enabled, n10AppVersion: n10AppVersion,
+            n10SystemName: n10SystemName, n10SystemVersion: n10SystemVersion,
+            createdAt: createdAt, updatedAt: updatedAt
         )
     }
 

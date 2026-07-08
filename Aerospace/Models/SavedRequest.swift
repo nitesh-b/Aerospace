@@ -18,6 +18,13 @@ nonisolated struct SavedRequest: Identifiable, Codable, Hashable, Sendable {
     var bearerToken: String
     var bodyKind: BodyKind
     var bodyText: String
+    /// When true, an N10 HMAC signature and the 10play identity headers are
+    /// added at send time (see N10Signer). The API key itself lives in the
+    /// Keychain, not on the request.
+    var n10SigningEnabled: Bool
+    var n10AppVersion: String
+    var n10SystemName: String
+    var n10SystemVersion: String
     let createdAt: Date
     var updatedAt: Date
 
@@ -32,6 +39,10 @@ nonisolated struct SavedRequest: Identifiable, Codable, Hashable, Sendable {
         bearerToken: String = "",
         bodyKind: BodyKind = .none,
         bodyText: String = "",
+        n10SigningEnabled: Bool = false,
+        n10AppVersion: String = "1.0",
+        n10SystemName: String = "iOS",
+        n10SystemVersion: String = "17.0",
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -45,6 +56,10 @@ nonisolated struct SavedRequest: Identifiable, Codable, Hashable, Sendable {
         self.bearerToken = bearerToken
         self.bodyKind = bodyKind
         self.bodyText = bodyText
+        self.n10SigningEnabled = n10SigningEnabled
+        self.n10AppVersion = n10AppVersion
+        self.n10SystemName = n10SystemName
+        self.n10SystemVersion = n10SystemVersion
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -73,6 +88,10 @@ nonisolated struct SavedRequest: Identifiable, Codable, Hashable, Sendable {
             bearerToken: bearerToken,
             bodyKind: bodyKind,
             bodyText: bodyText,
+            n10SigningEnabled: n10SigningEnabled,
+            n10AppVersion: n10AppVersion,
+            n10SystemName: n10SystemName,
+            n10SystemVersion: n10SystemVersion,
             createdAt: now,
             updatedAt: now
         )
