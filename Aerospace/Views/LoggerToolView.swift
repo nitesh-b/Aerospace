@@ -1,16 +1,15 @@
 //
-//  ContentView.swift
+//  LoggerToolView.swift
 //  Aerospace
 //
-//  Root view: a three-tab interface (Logs, Statistics, Settings) with a
-//  persistent server-status bar along the bottom.
+//  The Logger tool: a three-tab interface (Logs, Statistics, Settings) with a
+//  persistent server-status bar along the bottom. Presented in the detail area
+//  of the top-level tool navigator.
 //
 
 import SwiftUI
 
-struct ContentView: View {
-    @EnvironmentObject private var store: LogStore
-
+struct LoggerToolView: View {
     var body: some View {
         VStack(spacing: 0) {
             TabView {
@@ -81,5 +80,5 @@ struct ServerStatusBar: View {
 }
 
 #Preview {
-    ContentView().environmentObject(LogStore())
+    LoggerToolView().environmentObject(LogStore())
 }

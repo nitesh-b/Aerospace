@@ -1,10 +1,17 @@
 # Aerospace
 
-A standalone macOS SwiftUI application that runs a local HTTP server, accepts
-log events from any application on the machine, categorizes and persists them
-to SQLite, and displays them in a real-time interface.
+A standalone macOS SwiftUI application that hosts a set of developer **tools**,
+selectable from a sidebar. Two tools ship today:
 
-## Features
+- **Logger** — a local HTTP server that receives, categorizes, persists, and
+  displays log events in real time.
+- **API Tester** — a lightweight client for building, sending, saving, and
+  inspecting HTTP/REST requests (a focused, no-frills alternative to Postman).
+
+Both tools share the app's dependency-free architecture: SwiftUI, a `@MainActor`
+store facade per tool, and direct SQLite3 persistence (no third-party packages).
+
+## Logger
 
 - **Local HTTP server** on a configurable port (default `57333`), built on
   Apple's `Network` framework — **no third-party dependencies**.
@@ -122,6 +129,29 @@ fetch("http://localhost:57333/log", {
 });
 ```
 
+## API Tester
+
+The second tool builds and sends HTTP requests and inspects the response.
+
+- **Request builder** — name, method (GET/POST/PUT/PATCH/DELETE), URL, dynamic
+  query parameters and headers (each row can be enabled/disabled), No-Auth or
+  Bearer-token authentication, and a raw or JSON body (with a "Format" button).
+- **Send** — executed with `URLSession`; the request duration is measured with a
+  monotonic clock. In-flight requests are replaced/cancelled on the next Send.
+- **Response viewer** — status pill (coloured by class), duration, byte size,
+  and a Body / Headers switcher. JSON bodies are pretty-printed.
+- **Persistence** — every request is saved to SQLite and auto-saved as you edit
+  (debounced). Requests can be duplicated and deleted from the sidebar.
+
+Query parameters are merged onto the URL via `URLComponents` (encoded once);
+`Authorization: Bearer <token>` is added only when a non-empty token is set; and
+`Content-Type: application/json` is added for JSON bodies only when you haven't
+set one yourself.
+
+Because the app tests arbitrary endpoints (including `http://` and localhost),
+App Transport Security is relaxed via `Aerospace/Info.plist`
+(`NSAllowsArbitraryLoads`), and the sandbox grants `network.client`.
+
 ## Storage
 
 Logs are stored at:
@@ -150,29 +180,42 @@ CREATE TABLE logs (
 
 ```
 Aerospace/
-├── AerospaceApp.swift          App entry; owns the shared LogStore
-├── ContentView.swift           TabView + server status bar
-├── Aerospace.entitlements      Sandbox network-server entitlement
+├── AerospaceApp.swift          App entry; owns LogStore + APITesterStore
+├── Info.plist                  Bundle keys + ATS (arbitrary loads)
+├── Aerospace.entitlements      Sandbox network server + client
 ├── Models/
-│   ├── LogEvent.swift          Stored log representation
-│   ├── LogLevel.swift          Severity levels
-│   ├── LogRequest.swift        Incoming-payload → LogEvent parser
-│   └── LogStatistics.swift     Aggregation for the Statistics tab
-├── Server/
+│   ├── LogEvent / LogLevel / LogRequest / LogStatistics   (Logger)
+│   ├── HTTPMethod / AuthKind / BodyKind / KeyValueItem     (API Tester)
+│   └── SavedRequest / APIResponse                          (API Tester)
+├── Server/                     Logger inbound server
 │   ├── HTTPRequestParser.swift Incremental HTTP/1.1 parser
 │   └── HTTPLogServer.swift     Network.framework listener + routing
+├── Networking/                 API Tester outbound client
+│   ├── RequestBuilder.swift    SavedRequest → URLRequest (pure)
+│   └── APIClient.swift         URLSession execution + response mapping
 ├── Storage/
-│   ├── SQLiteLogStore.swift    Thread-safe SQLite persistence
-│   └── LogStore.swift          Observable app state (store + server + settings)
+│   ├── SQLiteLogStore.swift    Logs persistence
+│   ├── LogStore.swift          Logger facade (store + server + settings)
+│   ├── SQLiteRequestStore.swift  Saved-requests persistence
+│   └── APITesterStore.swift    API Tester facade (CRUD + send + auto-save)
 └── Views/
-    ├── LogsView.swift
-    ├── StatisticsView.swift
-    ├── SettingsView.swift
-    └── JsonViewer.swift
+    ├── RootView.swift          Tool sidebar → detail
+    ├── LoggerToolView.swift    Logger tabs + status bar
+    ├── LogsView / StatisticsView / SettingsView / JsonViewer
+    ├── APITesterView.swift     HSplitView / VSplitView layout
+    ├── RequestListView.swift   Saved-request sidebar
+    ├── RequestEditorView.swift Builder form
+    ├── KeyValueEditor.swift    Reusable headers/params table
+    └── ResponseView.swift      Status / headers / body
 ```
 
-`LogStore` doubles as the view-model layer: the SwiftUI views bind directly to
-its published state rather than to separate per-tab view-model objects.
+Each tool has one `@MainActor` store facade (`LogStore`, `APITesterStore`) that
+the SwiftUI views bind to directly, rather than per-view ViewModels. Both are
+injected as environment objects at the app root.
+
+The API Tester's saved requests are stored in a sibling database,
+`…/Application Support/Aerospace/requests.sqlite`, with headers and query
+parameters kept as JSON-encoded columns.
 
 ## Testing
 

@@ -10,13 +10,14 @@ import SwiftUI
 
 struct JsonViewer: View {
     let json: String
+    var title: String = "Payload"
 
     @State private var copied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Payload")
+                Text(title)
                     .font(.headline)
                 Spacer()
                 Button {
