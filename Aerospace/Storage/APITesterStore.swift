@@ -24,6 +24,26 @@ final class APITesterStore: ObservableObject {
     }
     private static let n10KeyAccount = "N10_API_KEY"
 
+    /// Global variables available to every request as `{name}` tokens in the
+    /// URL, header values, query-param values, bearer token, and body.
+    /// Persisted as JSON in UserDefaults — shared across all saved requests,
+    /// not per-request state.
+    @Published var variables: [KeyValueItem] {
+        didSet { saveVariables() }
+    }
+    private static let variablesKey = "api.variables"
+
+    /// Enabled, non-blank-keyed variables as a name → value dictionary, ready
+    /// to hand to `RequestBuilder`. A later duplicate key wins.
+    var variablesDictionary: [String: String] {
+        var result: [String: String] = [:]
+        for item in variables where item.isEnabled
+            && !item.key.trimmingCharacters(in: .whitespaces).isEmpty {
+            result[item.key] = item.value
+        }
+        return result
+    }
+
     /// The request currently shown in the editor. Edits are debounced to disk.
     @Published var editing: SavedRequest {
         didSet { if !isLoadingSelection { scheduleAutoSave() } }
@@ -35,14 +55,17 @@ final class APITesterStore: ObservableObject {
     }
 
     private let store: SQLiteRequestStore
+    private let defaults: UserDefaults
     private var autoSaveWork: DispatchWorkItem?
     private var sendTask: Task<Void, Never>?
     /// Suppresses auto-save while we programmatically replace `editing`.
     private var isLoadingSelection = false
 
-    init(store: SQLiteRequestStore? = nil) {
+    init(store: SQLiteRequestStore? = nil, defaults: UserDefaults = .standard) {
         self.store = store ?? Self.makeDefaultStore()
+        self.defaults = defaults
         n10APIKey = KeychainStore.read(account: Self.n10KeyAccount) ?? ""
+        variables = Self.loadVariables(from: defaults)
         let all = self.store.fetchAll()
         requests = all
         if let first = all.first {
@@ -52,6 +75,19 @@ final class APITesterStore: ObservableObject {
             editing = SavedRequest()
             selectedID = nil
         }
+    }
+
+    private static func loadVariables(from defaults: UserDefaults) -> [KeyValueItem] {
+        guard let data = defaults.data(forKey: variablesKey),
+              let items = try? JSONDecoder().decode([KeyValueItem].self, from: data) else {
+            return []
+        }
+        return items
+    }
+
+    private func saveVariables() {
+        guard let data = try? JSONEncoder().encode(variables) else { return }
+        defaults.set(data, forKey: Self.variablesKey)
     }
 
     private static func makeDefaultStore() -> SQLiteRequestStore {
@@ -153,7 +189,7 @@ final class APITesterStore: ObservableObject {
     func send() {
         var request: URLRequest
         do {
-            request = try RequestBuilder().makeURLRequest(from: editing)
+            request = try RequestBuilder().makeURLRequest(from: editing, variables: variablesDictionary)
         } catch {
             lastResponse = APIResponse(
                 outcome: .failure((error as? LocalizedError)?.errorDescription ?? "\(error)")

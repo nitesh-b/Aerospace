@@ -17,6 +17,7 @@ struct RequestEditorView: View {
         case auth = "Auth"
         case body = "Body"
         case n10 = "N10"
+        case variables = "Variables"
         var id: String { rawValue }
     }
     @State private var section: Section = .params
@@ -93,6 +94,9 @@ struct RequestEditorView: View {
             return store.editing.bodyKind == .none ? "Body" : "Body •"
         case .n10:
             return store.editing.n10SigningEnabled ? "N10 •" : "N10"
+        case .variables:
+            let n = store.variables.filter { !$0.key.isEmpty }.count
+            return n > 0 ? "Variables (\(n))" : "Variables"
         }
     }
 
@@ -113,6 +117,20 @@ struct RequestEditorView: View {
             bodyEditor
         case .n10:
             n10Editor
+        case .variables:
+            variablesEditor
+        }
+    }
+
+    private var variablesEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Global variables, available in any request as {name}.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            KeyValueEditor(items: $store.variables, keyPlaceholder: "Name", valuePlaceholder: "Value")
+            Text("Applies to the URL, header values, query-param values, bearer token, and body.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
     }
 

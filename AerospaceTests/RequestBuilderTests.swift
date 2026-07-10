@@ -172,4 +172,65 @@ final class RequestBuilderTests: XCTestCase {
         r.bodyText = "body"
         XCTAssertEqual(try builder.makeURLRequest(from: r).httpBody, Data("body".utf8))
     }
+
+    // MARK: - Variable substitution
+
+    func testSubstitutingReplacesKnownTokens() {
+        let result = RequestBuilder.substituting("Bearer {access_token}", with: ["access_token": "abc123"])
+        XCTAssertEqual(result, "Bearer abc123")
+    }
+
+    func testSubstitutingLeavesUnknownTokensUntouched() {
+        let result = RequestBuilder.substituting("Bearer {access_token}", with: [:])
+        XCTAssertEqual(result, "Bearer {access_token}")
+    }
+
+    func testSubstitutingHandlesMultipleTokens() {
+        let result = RequestBuilder.substituting("{scheme}://{host}/x", with: ["scheme": "https", "host": "example.com"])
+        XCTAssertEqual(result, "https://example.com/x")
+    }
+
+    func testVariablesSubstitutedInURL() throws {
+        let r = request("https://{host}/path")
+        let req = try builder.makeURLRequest(from: r, variables: ["host": "example.com"])
+        XCTAssertEqual(req.url?.host, "example.com")
+    }
+
+    func testVariablesSubstitutedInHeaderValues() throws {
+        var r = request("https://example.com")
+        r.headers = [KeyValueItem(key: "Authorization", value: "Bearer {access_token}")]
+        let req = try builder.makeURLRequest(from: r, variables: ["access_token": "xyz"])
+        XCTAssertEqual(req.value(forHTTPHeaderField: "Authorization"), "Bearer xyz")
+    }
+
+    func testVariablesSubstitutedInQueryParamValues() throws {
+        var r = request("https://example.com")
+        r.queryParams = [KeyValueItem(key: "token", value: "{access_token}")]
+        let req = try builder.makeURLRequest(from: r, variables: ["access_token": "xyz"])
+        let items = URLComponents(url: req.url!, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertEqual(items.first?.value, "xyz")
+    }
+
+    func testVariablesSubstitutedInBearerToken() throws {
+        var r = request("https://example.com")
+        r.authKind = .bearer
+        r.bearerToken = "{access_token}"
+        let req = try builder.makeURLRequest(from: r, variables: ["access_token": "xyz"])
+        XCTAssertEqual(req.value(forHTTPHeaderField: "Authorization"), "Bearer xyz")
+    }
+
+    func testVariablesSubstitutedInBody() throws {
+        var r = request("https://example.com", method: .post)
+        r.bodyKind = .json
+        r.bodyText = "{\"token\":\"{access_token}\"}"
+        let req = try builder.makeURLRequest(from: r, variables: ["access_token": "xyz"])
+        XCTAssertEqual(req.httpBody, Data("{\"token\":\"xyz\"}".utf8))
+    }
+
+    func testUnresolvedTokenLeftUntouchedInHeaderWhenNoVariablesProvided() throws {
+        var r = request("https://example.com")
+        r.headers = [KeyValueItem(key: "X-A", value: "{also_unresolved}")]
+        let req = try builder.makeURLRequest(from: r)
+        XCTAssertEqual(req.value(forHTTPHeaderField: "X-A"), "{also_unresolved}")
+    }
 }
