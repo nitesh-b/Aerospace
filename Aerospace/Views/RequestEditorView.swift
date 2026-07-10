@@ -199,23 +199,52 @@ struct RequestEditorView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Headers added at send time").font(.caption).foregroundStyle(.secondary)
                     headerPreview("User-Agent", userAgentPreview)
-                    headerPreview("X-Network-Ten-App", userAgentPreview)
-                    headerPreview("X-N10-SIG", "<unixSeconds>_<hmacSHA256(\"ts:finalURL\")>")
+                    if isAppleTVPreview {
+                        headerPreview("X-Network-Ten-App", userAgentPreview)
+                    } else {
+                        Text("X-Network-Ten-App: only sent when System Name is \"tvOS\"")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    if let signature = signatureHeaderPreview {
+                        headerPreview(signature.name, signature.value)
+                    } else {
+                        Text("No signature header for \(store.editing.method.rawValue) requests")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
                 }
                 .padding(.top, 4)
             } else {
-                Text("When on, an HMAC-SHA256 signature over the final URL and the 10play "
-                     + "identity headers are added automatically.")
+                Text("When on, a method-dependent signature (X-N10-SIG for GET, "
+                     + "X-Network-Ten-Auth for POST) and the 10play identity headers "
+                     + "are added automatically.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
 
     private var userAgentPreview: String {
-        N10Signer().userAgent(.init(
-            appVersion: store.editing.n10AppVersion,
-            systemName: store.editing.n10SystemName,
-            systemVersion: store.editing.n10SystemVersion))
+        N10Signer().userAgent(deviceInfoPreview)
+    }
+
+    private var deviceInfoPreview: N10Signer.DeviceInfo {
+        .init(appVersion: store.editing.n10AppVersion,
+              systemName: store.editing.n10SystemName,
+              systemVersion: store.editing.n10SystemVersion)
+    }
+
+    private var isAppleTVPreview: Bool {
+        N10Signer.isAppleTV(deviceInfoPreview)
+    }
+
+    private var signatureHeaderPreview: (name: String, value: String)? {
+        switch store.editing.method {
+        case .get:
+            return ("X-N10-SIG", "<unixSeconds>_<hmacSHA256(\"ts:finalURL\")>")
+        case .post:
+            return ("X-Network-Ten-Auth", "base64(\"yyyyMMddHHmmss\" UTC)")
+        case .put, .patch, .delete:
+            return nil
+        }
     }
 
     private func labeledField(_ label: String, text: Binding<String>) -> some View {

@@ -2,10 +2,13 @@
 //  N10Signer.swift
 //  Aerospace
 //
-//  Reproduces the Network Ten signed-request scheme used by the 10play iOS app:
-//  an HMAC-SHA256 signature over "<unixSeconds>:<url>" (keyed by the hex-decoded
-//  API key) plus the identifying User-Agent / X-Network-Ten-App headers. Pure
-//  and deterministic (the timestamp is injected) so it can be unit-tested.
+//  Reproduces the Network Ten signed-request scheme used by the 10play app.
+//  Signing is method-dependent: GET requests get an HMAC-SHA256 signature
+//  over "<unixSeconds>:<url>" (X-N10-SIG); POST requests get a base64-encoded
+//  UTC timestamp token instead (X-Network-Ten-Auth), no HMAC; every other
+//  method gets neither. X-Network-Ten-App is only sent when the device
+//  identifies as tvOS. Pure and deterministic (the timestamp is injected) so
+//  it can be unit-tested.
 //
 
 import Foundation
@@ -23,6 +26,7 @@ nonisolated struct N10Signer: Sendable {
 
     /// The headers the 10play app sends. Names match the iOS implementation.
     static let signatureHeader = "X-N10-SIG"
+    static let authTokenHeader = "X-Network-Ten-Auth"
     static let userAgentHeader = "User-Agent"
     static let appHeader = "X-Network-Ten-App"
 
@@ -31,23 +35,52 @@ nonisolated struct N10Signer: Sendable {
         "10play/\(device.appVersion) \(device.systemName) \(device.systemVersion) UAP"
     }
 
-    /// The full set of headers to attach to a request, given the FINAL request
-    /// URL (query params included) and the current timestamp in whole seconds.
-    func headers(finalURL: String, apiKeyHex: String, device: DeviceInfo, timestamp: Int)
-        -> [String: String] {
+    /// True when the device identity indicates the 10play Apple TV app.
+    static func isAppleTV(_ device: DeviceInfo) -> Bool {
+        device.systemName.caseInsensitiveCompare("tvOS") == .orderedSame
+    }
+
+    /// The full set of headers to attach to a request, given the request's
+    /// HTTP method, its FINAL URL (query params included), and the current
+    /// timestamp in whole seconds. User-Agent is always included; the
+    /// signature header is method-dependent (see type documentation above).
+    func headers(method: HTTPMethod, finalURL: String, apiKeyHex: String, device: DeviceInfo,
+                timestamp: Int) -> [String: String] {
         let ua = userAgent(device)
-        return [
-            Self.signatureHeader: signatureHeaderValue(timestamp: timestamp,
-                                                        url: finalURL, apiKeyHex: apiKeyHex),
-            Self.userAgentHeader: ua,
-            Self.appHeader: ua,
-        ]
+        var result: [String: String] = [Self.userAgentHeader: ua]
+
+        if Self.isAppleTV(device) {
+            result[Self.appHeader] = ua
+        }
+
+        switch method {
+        case .get:
+            result[Self.signatureHeader] = signatureHeaderValue(
+                timestamp: timestamp, url: finalURL, apiKeyHex: apiKeyHex)
+        case .post:
+            result[Self.authTokenHeader] = authTokenHeaderValue(timestamp: timestamp)
+        case .put, .patch, .delete:
+            break
+        }
+
+        return result
     }
 
     /// The value of X-N10-SIG: "<timestamp>_<hmacHex>".
     func signatureHeaderValue(timestamp: Int, url: String, apiKeyHex: String) -> String {
         let message = "\(timestamp):\(url)"
         return "\(timestamp)_\(Self.hmacSHA256Hex(message: message, keyHex: apiKeyHex))"
+    }
+
+    /// The value of X-Network-Ten-Auth: base64("yyyyMMddHHmmss") in UTC.
+    func authTokenHeaderValue(timestamp: Int) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let date = Date(timeIntervalSince1970: TimeInterval(timestamp))
+        let c = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        let raw = String(format: "%04d%02d%02d%02d%02d%02d",
+                         c.year!, c.month!, c.day!, c.hour!, c.minute!, c.second!)
+        return Data(raw.utf8).base64EncodedString()
     }
 
     // MARK: - Primitives (static, so they can be tested against known vectors)

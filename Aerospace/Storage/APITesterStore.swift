@@ -175,7 +175,7 @@ final class APITesterStore: ObservableObject {
                 systemVersion: editing.n10SystemVersion)
             let timestamp = Int(Date().timeIntervalSince1970)
             let signed = N10Signer().headers(
-                finalURL: request.url?.absoluteString ?? "",
+                method: editing.method, finalURL: request.url?.absoluteString ?? "",
                 apiKeyHex: key, device: device, timestamp: timestamp)
             for (name, value) in signed {
                 request.setValue(value, forHTTPHeaderField: name)
