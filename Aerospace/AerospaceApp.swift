@@ -12,14 +12,19 @@ import SwiftUI
 struct AerospaceApp: App {
     @StateObject private var store = LogStore()
     @StateObject private var apiStore = APITesterStore()
+    @StateObject private var injectorStore = InjectorStore()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(store)
                 .environmentObject(apiStore)
+                .environmentObject(injectorStore)
                 .frame(minWidth: 960, minHeight: 600)
-                .onAppear { store.startServer() }
+                .onAppear {
+                    store.startServer()
+                    injectorStore.startServer()
+                }
         }
         .commands {
             CommandGroup(after: .appInfo) {
