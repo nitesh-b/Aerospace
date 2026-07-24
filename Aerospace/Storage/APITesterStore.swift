@@ -15,6 +15,10 @@ final class APITesterStore: ObservableObject {
 
     @Published private(set) var requests: [SavedRequest] = []
     @Published private(set) var folders: [RequestFolder] = []
+    @Published private(set) var tabs: [OpenTab] = []
+    @Published var activeTabID: OpenTab.ID?
+    private static let openTabsKey = "api.openTabs"
+    private static let activeTabKey = "api.activeTab"
     @Published private(set) var isSending = false
     @Published private(set) var lastResponse: APIResponse?
 
@@ -47,7 +51,11 @@ final class APITesterStore: ObservableObject {
 
     /// The request currently shown in the editor. Edits are debounced to disk.
     @Published var editing: SavedRequest {
-        didSet { if !isLoadingSelection { scheduleAutoSave() } }
+        didSet {
+            guard !isLoadingSelection else { return }
+            writeEditingIntoActiveTab()
+            scheduleAutoSave()
+        }
     }
 
     /// Sidebar selection. Changing it flushes pending edits, then loads the row.
@@ -77,6 +85,7 @@ final class APITesterStore: ObservableObject {
             editing = SavedRequest()
             selectedID = nil
         }
+        restoreTabs()
     }
 
     // An explicit (trivial) deinit works around a toolchain crash: without one,
@@ -273,6 +282,96 @@ final class APITesterStore: ObservableObject {
         folders = store.fetchAllFolders()
     }
 
+    // MARK: - Tabs
+
+    private func restoreTabs() {
+        guard let data = defaults.data(forKey: Self.openTabsKey),
+              let saved = try? JSONDecoder().decode([OpenTab].self, from: data) else { return }
+        let liveIDs = Set(requests.map(\.id))
+        // Keep ephemeral tabs; keep saved-backed tabs only if the request still exists.
+        tabs = saved.filter { $0.requestID == nil || liveIDs.contains($0.requestID!) }
+        if let raw = defaults.string(forKey: Self.activeTabKey),
+           let id = UUID(uuidString: raw), tabs.contains(where: { $0.id == id }) {
+            activeTabID = id
+        } else {
+            activeTabID = tabs.first?.id
+        }
+        loadActiveTabIntoEditing()
+    }
+
+    private func persistTabs() {
+        if let data = try? JSONEncoder().encode(tabs) {
+            defaults.set(data, forKey: Self.openTabsKey)
+        }
+        defaults.set(activeTabID?.uuidString, forKey: Self.activeTabKey)
+    }
+
+    private func loadActiveTabIntoEditing() {
+        guard let activeTabID, let tab = tabs.first(where: { $0.id == activeTabID }) else { return }
+        isLoadingSelection = true
+        editing = tab.request
+        selectedID = tab.requestID
+        isLoadingSelection = false
+    }
+
+    func openRequest(id: SavedRequest.ID, pinned: Bool) {
+        flushPendingSave()
+        guard let request = requests.first(where: { $0.id == id }) ?? store.fetch(id: id) else { return }
+        // Already open? Focus it.
+        if let existing = tabs.first(where: { $0.requestID == id }) {
+            if pinned, let idx = tabs.firstIndex(where: { $0.id == existing.id }) {
+                tabs[idx].isPreview = false
+            }
+            selectTab(id: existing.id)
+            return
+        }
+        // Reuse an existing preview tab, else append.
+        if let idx = tabs.firstIndex(where: { $0.isPreview }) {
+            tabs[idx] = OpenTab(id: tabs[idx].id, requestID: id, request: request, isPreview: !pinned)
+            selectTab(id: tabs[idx].id)
+        } else {
+            let tab = OpenTab(requestID: id, request: request, isPreview: !pinned)
+            tabs.append(tab)
+            selectTab(id: tab.id)
+        }
+        persistTabs()
+    }
+
+    func selectTab(id: OpenTab.ID) {
+        flushPendingSave()
+        activeTabID = id
+        loadActiveTabIntoEditing()
+        persistTabs()
+    }
+
+    func pinActiveTab() {
+        guard let activeTabID, let idx = tabs.firstIndex(where: { $0.id == activeTabID }) else { return }
+        tabs[idx].isPreview = false
+        persistTabs()
+    }
+
+    func closeTab(id: OpenTab.ID) {
+        guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let wasActive = activeTabID == id
+        tabs.remove(at: idx)
+        if wasActive {
+            let neighbor = tabs[safe: idx] ?? tabs[safe: idx - 1] ?? tabs.last
+            activeTabID = neighbor?.id
+            loadActiveTabIntoEditing()
+        }
+        persistTabs()
+    }
+
+    private func writeEditingIntoActiveTab() {
+        guard let activeTabID, let idx = tabs.firstIndex(where: { $0.id == activeTabID }) else { return }
+        tabs[idx].request = editing
+        // A meaningful edit pins a preview tab (VS Code behavior).
+        if tabs[idx].isPreview && !editing.isEffectivelyEmpty {
+            tabs[idx].isPreview = false
+        }
+        persistTabs()
+    }
+
     // MARK: - Sending
 
     func send() {
@@ -323,5 +422,11 @@ final class APITesterStore: ObservableObject {
         sendTask?.cancel()
         sendTask = nil
         isSending = false
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
