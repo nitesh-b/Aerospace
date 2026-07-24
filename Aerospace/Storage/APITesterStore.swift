@@ -14,6 +14,7 @@ import Combine
 final class APITesterStore: ObservableObject {
 
     @Published private(set) var requests: [SavedRequest] = []
+    @Published private(set) var folders: [RequestFolder] = []
     @Published private(set) var isSending = false
     @Published private(set) var lastResponse: APIResponse?
 
@@ -68,6 +69,7 @@ final class APITesterStore: ObservableObject {
         variables = Self.loadVariables(from: defaults)
         let all = self.store.fetchAll()
         requests = all
+        folders = self.store.fetchAllFolders()
         if let first = all.first {
             editing = first
             selectedID = first.id       // didSet does not fire during init
@@ -76,6 +78,15 @@ final class APITesterStore: ObservableObject {
             selectedID = nil
         }
     }
+
+    // An explicit (trivial) deinit works around a toolchain crash: without one,
+    // deallocating an APITesterStore instance aborts with a malloc-corruption
+    // SIGABRT inside the compiler-synthesized isolated deinit for this
+    // @MainActor class (reproduces even on the pre-folders version of this
+    // file, with no store methods called — see task-4-report.md for the
+    // isolated repro). This keeps `APITesterStore(store:defaults:)` safe to
+    // construct and let go out of scope in tests.
+    deinit {}
 
     private static func loadVariables(from defaults: UserDefaults) -> [KeyValueItem] {
         guard let data = defaults.data(forKey: variablesKey),
@@ -182,6 +193,84 @@ final class APITesterStore: ObservableObject {
     /// Re-read the list from disk (kept in updated_at DESC order).
     private func refreshList() {
         requests = store.fetchAll()
+    }
+
+    // MARK: - Folders
+
+    /// Test seam: persist a request directly (production code paths use tabs/auto-save).
+    func debugUpsertRequest(_ request: SavedRequest) throws {
+        try store.upsert(request)
+        refreshList()
+    }
+
+    @discardableResult
+    func newFolder(parentID: UUID?) -> RequestFolder {
+        let siblings = folders.filter { $0.parentID == parentID }
+        let nextIndex = (siblings.map(\.sortIndex).max() ?? -1) + 1
+        let folder = RequestFolder(parentID: parentID, sortIndex: nextIndex)
+        try? store.upsertFolder(folder)
+        refreshFolders()
+        return folder
+    }
+
+    func renameFolder(id: UUID, to name: String) {
+        guard var folder = folders.first(where: { $0.id == id }) else { return }
+        folder.name = name
+        folder.updatedAt = Date()
+        try? store.upsertFolder(folder)
+        refreshFolders()
+    }
+
+    func deleteFolder(id: UUID) {
+        guard let target = folders.first(where: { $0.id == id }) else { return }
+        // Re-parent child folders.
+        for var child in folders where child.parentID == id {
+            child.parentID = target.parentID
+            child.updatedAt = Date()
+            try? store.upsertFolder(child)
+        }
+        // Re-parent child requests.
+        for var req in requests where req.folderID == id {
+            req.folderID = target.parentID
+            req.updatedAt = Date()
+            try? store.upsert(req)
+        }
+        store.deleteFolder(id: id)
+        refreshFolders()
+        refreshList()
+    }
+
+    func move(requestID: SavedRequest.ID, toFolder folderID: UUID?) {
+        guard var req = requests.first(where: { $0.id == requestID }) else { return }
+        req.folderID = folderID
+        req.updatedAt = Date()
+        try? store.upsert(req)
+        refreshList()
+    }
+
+    func move(folderID: UUID, toParent parentID: UUID?) {
+        guard var folder = folders.first(where: { $0.id == folderID }) else { return }
+        if let parentID, parentID == folderID || isDescendant(parentID, of: folderID) {
+            return  // cycle guard
+        }
+        folder.parentID = parentID
+        folder.updatedAt = Date()
+        try? store.upsertFolder(folder)
+        refreshFolders()
+    }
+
+    /// True if `candidate` is `folderID` itself or nested anywhere beneath it.
+    func isDescendant(_ candidate: UUID, of folderID: UUID) -> Bool {
+        var current: UUID? = candidate
+        while let id = current {
+            if id == folderID { return true }
+            current = folders.first(where: { $0.id == id })?.parentID
+        }
+        return false
+    }
+
+    private func refreshFolders() {
+        folders = store.fetchAllFolders()
     }
 
     // MARK: - Sending
