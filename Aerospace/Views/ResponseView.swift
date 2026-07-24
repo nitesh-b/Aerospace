@@ -12,6 +12,9 @@ struct ResponseView: View {
     let response: APIResponse?
     let isSending: Bool
 
+    @EnvironmentObject private var store: APITesterStore
+    @State private var showFind = false
+
     private enum Pane: String, CaseIterable, Identifiable {
         case body = "Body"
         case headers = "Headers"
@@ -121,15 +124,22 @@ struct ResponseView: View {
             Text("Empty body")
                 .font(.callout).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if response.isBodyJSON {
-            JsonViewer(json: response.bodyText, title: "Response Body")
         } else {
-            ScrollView([.vertical, .horizontal]) {
-                Text(response.bodyText)
-                    .textSelection(.enabled)
-                    .font(.system(.body, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
+            ZStack {
+                // Hidden button carries the Cmd+S shortcut; active only while the
+                // body pane is visible so it does not shadow a global Save.
+                Button("") { showFind = true }
+                    .keyboardShortcut("s", modifiers: .command)
+                    .opacity(0)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+
+                ResponseTextView(
+                    text: response.bodyText,
+                    isJSON: response.isBodyJSON,
+                    onOpenLink: { url in store.openEphemeralGet(url: url) },
+                    showFindBarSignal: $showFind
+                )
             }
         }
     }
@@ -177,5 +187,6 @@ struct ResponseView: View {
                               duration: .milliseconds(245), isBodyJSON: true),
         isSending: false
     )
+    .environmentObject(APITesterStore())
     .frame(width: 480, height: 360)
 }
