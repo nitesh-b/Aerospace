@@ -157,3 +157,47 @@ final class SQLiteRequestStoreTests: XCTestCase {
         XCTAssertEqual(fetched.headers, [])
     }
 }
+
+final class SQLiteFolderStoreTests: XCTestCase {
+
+    private func makeStore() throws -> SQLiteRequestStore {
+        let path = NSTemporaryDirectory() + "aerospace-fold-\(UUID().uuidString).sqlite"
+        return try SQLiteRequestStore(path: path)
+    }
+
+    func testFolderInsertFetchDelete() throws {
+        let store = try makeStore()
+        XCTAssertTrue(store.fetchAllFolders().isEmpty)
+        let f = RequestFolder(name: "Auth", sortIndex: 1)
+        try store.upsertFolder(f)
+        XCTAssertEqual(store.fetchAllFolders().map(\.name), ["Auth"])
+        XCTAssertEqual(store.deleteFolder(id: f.id), 1)
+        XCTAssertTrue(store.fetchAllFolders().isEmpty)
+    }
+
+    func testFoldersOrderedBySortIndex() throws {
+        let store = try makeStore()
+        try store.upsertFolder(RequestFolder(name: "B", sortIndex: 2))
+        try store.upsertFolder(RequestFolder(name: "A", sortIndex: 1))
+        XCTAssertEqual(store.fetchAllFolders().map(\.name), ["A", "B"])
+    }
+
+    func testRequestFolderAndSortPersist() throws {
+        let store = try makeStore()
+        let folderID = UUID()
+        var r = SavedRequest(name: "R", urlString: "https://x")
+        r.folderID = folderID
+        r.sortIndex = 5
+        try store.upsert(r)
+        let fetched = try XCTUnwrap(store.fetch(id: r.id))
+        XCTAssertEqual(fetched.folderID, folderID)
+        XCTAssertEqual(fetched.sortIndex, 5)
+    }
+
+    func testRootRequestHasNilFolder() throws {
+        let store = try makeStore()
+        let r = SavedRequest(name: "Root", urlString: "https://x")
+        try store.upsert(r)
+        XCTAssertNil(try XCTUnwrap(store.fetch(id: r.id)).folderID)
+    }
+}

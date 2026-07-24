@@ -61,6 +61,16 @@ nonisolated final class SQLiteRequestStore: @unchecked Sendable {
         );
         """)
         try exec("CREATE INDEX IF NOT EXISTS idx_api_requests_updated ON api_requests(updated_at);")
+        try exec("""
+        CREATE TABLE IF NOT EXISTS api_folders (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            parent_id TEXT,
+            sort_index INTEGER NOT NULL DEFAULT 0,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        );
+        """)
         migrate()
     }
 
@@ -72,6 +82,8 @@ nonisolated final class SQLiteRequestStore: @unchecked Sendable {
             "ALTER TABLE api_requests ADD COLUMN n10_app_version TEXT NOT NULL DEFAULT '1.0';",
             "ALTER TABLE api_requests ADD COLUMN n10_system_name TEXT NOT NULL DEFAULT 'iOS';",
             "ALTER TABLE api_requests ADD COLUMN n10_system_version TEXT NOT NULL DEFAULT '17.0';",
+            "ALTER TABLE api_requests ADD COLUMN folder_id TEXT;",
+            "ALTER TABLE api_requests ADD COLUMN sort_index INTEGER NOT NULL DEFAULT 0;",
         ]
         for statement in additions {
             _ = sqlite3_exec(db, statement, nil, nil, nil)
@@ -88,8 +100,9 @@ nonisolated final class SQLiteRequestStore: @unchecked Sendable {
                 INSERT OR REPLACE INTO api_requests
                 (id, name, method, url, query_json, headers_json, auth_kind,
                  bearer_token, body_kind, body_text, n10_enabled, n10_app_version,
-                 n10_system_name, n10_system_version, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                 n10_system_name, n10_system_version, created_at, updated_at,
+                 folder_id, sort_index)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """
                 let stmt = try prepare(sql)
                 defer { sqlite3_finalize(stmt) }
@@ -109,6 +122,8 @@ nonisolated final class SQLiteRequestStore: @unchecked Sendable {
                 bindText(stmt, 14, request.n10SystemVersion)
                 sqlite3_bind_double(stmt, 15, request.createdAt.timeIntervalSince1970)
                 sqlite3_bind_double(stmt, 16, request.updatedAt.timeIntervalSince1970)
+                bindText(stmt, 17, request.folderID?.uuidString)
+                sqlite3_bind_int(stmt, 18, Int32(request.sortIndex))
                 guard sqlite3_step(stmt) == SQLITE_DONE else {
                     throw SQLiteError.step(lastMessage())
                 }
@@ -154,6 +169,60 @@ nonisolated final class SQLiteRequestStore: @unchecked Sendable {
         }) ?? 0
     }
 
+    // MARK: - Folders
+
+    func upsertFolder(_ folder: RequestFolder) throws {
+        try queue.sync {
+            let sql = """
+            INSERT OR REPLACE INTO api_folders
+            (id, name, parent_id, sort_index, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?);
+            """
+            let stmt = try prepare(sql)
+            defer { sqlite3_finalize(stmt) }
+            bindText(stmt, 1, folder.id.uuidString)
+            bindText(stmt, 2, folder.name)
+            bindText(stmt, 3, folder.parentID?.uuidString)
+            sqlite3_bind_int(stmt, 4, Int32(folder.sortIndex))
+            sqlite3_bind_double(stmt, 5, folder.createdAt.timeIntervalSince1970)
+            sqlite3_bind_double(stmt, 6, folder.updatedAt.timeIntervalSince1970)
+            guard sqlite3_step(stmt) == SQLITE_DONE else { throw SQLiteError.step(lastMessage()) }
+        }
+    }
+
+    func fetchAllFolders() -> [RequestFolder] {
+        (try? queue.sync {
+            let stmt = try prepare("""
+            SELECT id, name, parent_id, sort_index, created_at, updated_at
+            FROM api_folders ORDER BY sort_index ASC, name ASC;
+            """)
+            defer { sqlite3_finalize(stmt) }
+            var results: [RequestFolder] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                results.append(RequestFolder(
+                    id: UUID(uuidString: columnText(stmt, 0) ?? "") ?? UUID(),
+                    name: columnText(stmt, 1) ?? "Folder",
+                    parentID: UUID(uuidString: columnText(stmt, 2) ?? ""),
+                    sortIndex: Int(sqlite3_column_int(stmt, 3)),
+                    createdAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 4)),
+                    updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 5))
+                ))
+            }
+            return results
+        }) ?? []
+    }
+
+    @discardableResult
+    func deleteFolder(id: UUID) -> Int {
+        (try? queue.sync {
+            let stmt = try prepare("DELETE FROM api_folders WHERE id = ?;")
+            defer { sqlite3_finalize(stmt) }
+            bindText(stmt, 1, id.uuidString)
+            guard sqlite3_step(stmt) == SQLITE_DONE else { throw SQLiteError.step(lastMessage()) }
+            return Int(sqlite3_changes(db))
+        }) ?? 0
+    }
+
     // MARK: - JSON column coding
 
     private static func encode(_ items: [KeyValueItem]) -> String {
@@ -171,7 +240,7 @@ nonisolated final class SQLiteRequestStore: @unchecked Sendable {
     // MARK: - Row mapping
 
     private static let columns =
-        "id, name, method, url, query_json, headers_json, auth_kind, bearer_token, body_kind, body_text, n10_enabled, n10_app_version, n10_system_name, n10_system_version, created_at, updated_at"
+        "id, name, method, url, query_json, headers_json, auth_kind, bearer_token, body_kind, body_text, n10_enabled, n10_app_version, n10_system_name, n10_system_version, created_at, updated_at, folder_id, sort_index"
 
     private func row(from stmt: OpaquePointer?) -> SavedRequest {
         let id = UUID(uuidString: columnText(stmt, 0) ?? "") ?? UUID()
@@ -190,10 +259,13 @@ nonisolated final class SQLiteRequestStore: @unchecked Sendable {
         let n10SystemVersion = columnText(stmt, 13) ?? "17.0"
         let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 14))
         let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 15))
+        let folderID = UUID(uuidString: columnText(stmt, 16) ?? "")   // nil for NULL/blank
+        let sortIndex = Int(sqlite3_column_int(stmt, 17))
         return SavedRequest(
             id: id, name: name, method: method, urlString: url,
             queryParams: query, headers: headers, authKind: auth, bearerToken: bearer,
             bodyKind: bodyKind, bodyText: bodyText,
+            folderID: folderID, sortIndex: sortIndex,
             n10SigningEnabled: n10Enabled, n10AppVersion: n10AppVersion,
             n10SystemName: n10SystemName, n10SystemVersion: n10SystemVersion,
             createdAt: createdAt, updatedAt: updatedAt
