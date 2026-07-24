@@ -152,6 +152,26 @@ final class APITesterStore: ObservableObject {
         editing = SavedRequest()
         isLoadingSelection = false
         selectedID = nil            // lazily inserted on first meaningful edit
+        // Open it as a preview tab so it appears in the tab bar.
+        let tab = OpenTab(requestID: editing.id, request: editing, isPreview: true)
+        tabs.append(tab)
+        activeTabID = tab.id
+        persistTabs()
+    }
+
+    func newRequest(inFolder folderID: UUID?) {
+        flushPendingSave()
+        isLoadingSelection = true
+        var fresh = SavedRequest()
+        fresh.folderID = folderID
+        editing = fresh
+        selectedID = nil
+        isLoadingSelection = false
+        // Open it as a pinned tab so the user can start editing immediately.
+        let tab = OpenTab(requestID: fresh.id, request: fresh, isPreview: false)
+        tabs.append(tab)
+        activeTabID = tab.id
+        persistTabs()
     }
 
     func duplicate(id: SavedRequest.ID) {
