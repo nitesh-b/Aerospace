@@ -1131,9 +1131,10 @@ Replace the single `private var sendTask: Task<Void, Never>?` with:
         sendingTabs.remove(id)
 ```
 
-Auto-save must only persist tabs backed by a saved request. In `performAutoSave()`, guard ephemeral tabs: at the top add:
+Auto-save must only persist tabs backed by a saved request. In `performAutoSave()`, guard ephemeral tabs — place the guard **immediately after** the existing `autoSaveWork = nil` line (clearing the work item first, so an early return never leaves a stale, already-executed work item that a later `flushPendingSave()` would resurrect against a different active tab):
 
 ```swift
+        autoSaveWork = nil
         // Ephemeral (unsaved) active tab: never auto-persist to the request list.
         if let activeTabID, let tab = tabs.first(where: { $0.id == activeTabID }), tab.requestID == nil {
             return
