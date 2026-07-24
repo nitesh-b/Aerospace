@@ -1692,14 +1692,18 @@ struct RequestListView: View {
 
     // MARK: - Nodes
 
-    @ViewBuilder
-    private func folderNode(_ folder: RequestFolder) -> some View {
-        DisclosureGroup {
-            ForEach(childFolders(of: folder.id)) { folderNode($0) }
-            ForEach(requests(in: folder.id)) { requestRow($0) }
-        } label: {
-            folderLabel(folder)
-        }
+    // Returns AnyView, not `some View`: a recursive view helper cannot declare an
+    // opaque return type in terms of itself (Swift compile error), so the recursion
+    // is type-erased.
+    private func folderNode(_ folder: RequestFolder) -> AnyView {
+        AnyView(
+            DisclosureGroup {
+                ForEach(childFolders(of: folder.id)) { folderNode($0) }
+                ForEach(requests(in: folder.id)) { requestRow($0) }
+            } label: {
+                folderLabel(folder)
+            }
+        )
     }
 
     private func folderLabel(_ folder: RequestFolder) -> some View {
@@ -1720,6 +1724,7 @@ struct RequestListView: View {
             Button("Rename") { renameText = folder.name; renaming = folder.id }
             Button("Delete", role: .destructive) { store.deleteFolder(id: folder.id) }
         }
+        .onDrag { NSItemProvider(object: "fld:\(folder.id.uuidString)" as NSString) }
         .onDrop(of: [.text], isTargeted: nil) { providers in
             handleDrop(providers, intoFolder: folder.id)
         }
@@ -1806,16 +1811,20 @@ struct RequestListView: View {
     }
 ```
 
-Also update the existing `newRequest()` to open a preview tab for the blank request so it appears in the tab bar (append after setting `editing`):
+Also update the existing `newRequest()` to open a preview tab for the blank request so it appears in the tab bar. It must **reuse the single existing preview tab** if one is open (replacing its contents in place, keeping that tab's id) rather than appending — otherwise two tabs end up with `isPreview == true`, which breaks `openRequest`'s preview-reuse (it only reuses the first preview tab). Add these lines just before `newRequest()`'s closing brace (after `selectedID = nil`):
 
 ```swift
-        let tab = OpenTab(requestID: editing.id, request: editing, isPreview: true)
-        tabs.append(tab)
-        activeTabID = tab.id
+        if let idx = tabs.firstIndex(where: { $0.isPreview }) {
+            tabs[idx] = OpenTab(id: tabs[idx].id, requestID: editing.id,
+                                request: editing, isPreview: true)
+            activeTabID = tabs[idx].id
+        } else {
+            let tab = OpenTab(requestID: editing.id, request: editing, isPreview: true)
+            tabs.append(tab)
+            activeTabID = tab.id
+        }
         persistTabs()
 ```
-
-Add these tab lines just before `newRequest()`'s closing brace (after `selectedID = nil`).
 
 - [ ] **Step 3: Build to verify it compiles**
 
