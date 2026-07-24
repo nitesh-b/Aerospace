@@ -17,11 +17,15 @@ struct APITesterView: View {
             RequestListView()
                 .frame(minWidth: 210, idealWidth: 240, maxWidth: 340)
 
-            VSplitView {
-                RequestEditorView()
-                    .frame(minWidth: 420, minHeight: 220)
-                ResponseView(response: store.lastResponse, isSending: store.isSending)
-                    .frame(minWidth: 420, minHeight: 180)
+            VStack(spacing: 0) {
+                TabBarView()
+                Divider()
+                VSplitView {
+                    RequestEditorView()
+                        .frame(minWidth: 420, minHeight: 220)
+                    ResponseView(response: store.lastResponse, isSending: store.isSending)
+                        .frame(minWidth: 420, minHeight: 180)
+                }
             }
         }
         .navigationTitle("API Tester")
