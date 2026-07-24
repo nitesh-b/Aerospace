@@ -182,4 +182,40 @@ final class APITesterStoreTabsTests: XCTestCase {
         XCTAssertNotEqual(store.activeTabID, originalTabID)
         XCTAssertEqual(store.requests.count, 2)
     }
+
+    func testOpenEphemeralGetInheritsOriginatingFolder() throws {
+        let (store, _, _) = try makeStore()
+        let folder = store.newFolder(parentID: nil)
+        var inFolder = SavedRequest(name: "InFolder", urlString: "https://example.com/f")
+        inFolder.folderID = folder.id
+        try store.debugUpsertRequest(inFolder)
+        store.openRequest(id: inFolder.id, pinned: true)   // active request lives in `folder`
+
+        store.openEphemeralGet(url: URL(string: "https://example.com/link")!)
+
+        let tab = try XCTUnwrap(store.tabs.first { $0.id == store.activeTabID })
+        XCTAssertNil(tab.requestID)                        // still ephemeral
+        XCTAssertEqual(tab.request.folderID, folder.id)    // inherited the originating folder
+    }
+
+    func testSaveActiveTabFilesEphemeralIntoOriginatingFolder() throws {
+        let (store, _, _) = try makeStore()
+        let folder = store.newFolder(parentID: nil)
+        var inFolder = SavedRequest(name: "InFolder", urlString: "https://example.com/f")
+        inFolder.folderID = folder.id
+        try store.debugUpsertRequest(inFolder)
+        store.openRequest(id: inFolder.id, pinned: true)
+        store.openEphemeralGet(url: URL(string: "https://example.com/link")!)
+        let ephemeralRequestID = store.editing.id
+
+        store.saveActiveTab()
+
+        // The active tab is now saved-backed and pinned.
+        let tab = try XCTUnwrap(store.tabs.first { $0.id == store.activeTabID })
+        XCTAssertEqual(tab.requestID, ephemeralRequestID)
+        XCTAssertFalse(tab.isPreview)
+        // The request is persisted in the list, filed in the originating folder.
+        let saved = try XCTUnwrap(store.requests.first { $0.id == ephemeralRequestID })
+        XCTAssertEqual(saved.folderID, folder.id)
+    }
 }

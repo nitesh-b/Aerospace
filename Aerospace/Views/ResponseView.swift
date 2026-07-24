@@ -127,10 +127,10 @@ struct ResponseView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ZStack {
-                // Hidden button carries the Cmd+S shortcut; active only while the
-                // body pane is visible so it does not shadow a global Save.
+                // Hidden button carries the Cmd+F find shortcut; active only while
+                // the body pane is visible so it is scoped to the response body.
                 Button("") { showFind = true }
-                    .keyboardShortcut("s", modifiers: .command)
+                    .keyboardShortcut("f", modifiers: .command)
                     .opacity(0)
                     .frame(width: 0, height: 0)
                     .accessibilityHidden(true)

@@ -410,8 +410,12 @@ final class APITesterStore: ObservableObject {
 
     func openEphemeralGet(url: URL) {
         flushPendingSave()
-        let request = SavedRequest(name: url.host ?? "Request", method: .get,
+        // Remember the folder of the request whose response was clicked, so a
+        // later save (Cmd+S) files this ephemeral tab in the same folder.
+        let originatingFolderID = editing.folderID
+        var request = SavedRequest(name: url.host ?? "Request", method: .get,
                                    urlString: url.absoluteString)
+        request.folderID = originatingFolderID
         let tab = OpenTab(requestID: nil, request: request, isPreview: false)
         tabs.append(tab)
         activeTabID = tab.id
@@ -421,6 +425,24 @@ final class APITesterStore: ObservableObject {
         isLoadingSelection = false
         persistTabs()
         send()
+    }
+
+    /// Explicitly persist the active tab's request to the saved-request list
+    /// (Cmd+S). For an ephemeral tab — e.g. one opened by Cmd+clicking a URL in
+    /// a response — this files it, keeping the folder it was opened from, and
+    /// converts the tab into a saved-backed, pinned tab. For an already-saved
+    /// request it flushes the current edit immediately.
+    func saveActiveTab() {
+        guard let activeTabID, let idx = tabs.firstIndex(where: { $0.id == activeTabID }) else { return }
+        var request = editing
+        request.updatedAt = Date()
+        try? store.upsert(request)
+        refreshList()
+        tabs[idx].request = request
+        tabs[idx].requestID = request.id   // ephemeral → saved-backed (no-op if already saved)
+        tabs[idx].isPreview = false        // pin
+        selectedID = request.id            // highlight in the sidebar
+        persistTabs()
     }
 
     private func writeEditingIntoActiveTab() {

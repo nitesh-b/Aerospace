@@ -66,6 +66,13 @@ struct RequestEditorView: View {
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(store.editing.urlString.trimmingCharacters(in: .whitespaces).isEmpty)
             }
+
+            Button { store.saveActiveTab() } label: {
+                Label("Save", systemImage: "tray.and.arrow.down")
+            }
+            .keyboardShortcut("s", modifiers: .command)
+            .help("Save request to the list")
+            .disabled(store.editing.urlString.trimmingCharacters(in: .whitespaces).isEmpty)
         }
     }
 
