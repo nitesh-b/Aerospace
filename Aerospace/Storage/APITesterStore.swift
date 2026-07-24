@@ -186,13 +186,18 @@ final class APITesterStore: ObservableObject {
         let copy = original.duplicated()
         try? store.upsert(copy)
         refreshList()
-        selectedID = copy.id        // triggers loadSelected → loads the copy
+        openRequest(id: copy.id, pinned: true)   // makes the copy the active pinned tab
     }
 
     func delete(id: SavedRequest.ID) {
         store.delete(id: id)
         if selectedID == id {
             autoSaveWork?.cancel(); autoSaveWork = nil   // don't resurrect the deleted row
+        }
+        // Close any tab(s) pointing at the deleted request so none can
+        // re-persist it via performAutoSave.
+        while let tab = tabs.first(where: { $0.requestID == id }) {
+            closeTab(id: tab.id)
         }
         refreshList()
         if selectedID == id {
@@ -297,7 +302,7 @@ final class APITesterStore: ObservableObject {
 
     func move(folderID: UUID, toParent parentID: UUID?) {
         guard var folder = folders.first(where: { $0.id == folderID }) else { return }
-        if let parentID, parentID == folderID || isDescendant(parentID, of: folderID) {
+        if let parentID, isDescendant(parentID, of: folderID) {
             return  // cycle guard
         }
         folder.parentID = parentID
@@ -372,7 +377,6 @@ final class APITesterStore: ObservableObject {
             tabs.append(tab)
             selectTab(id: tab.id)
         }
-        persistTabs()
     }
 
     func selectTab(id: OpenTab.ID) {

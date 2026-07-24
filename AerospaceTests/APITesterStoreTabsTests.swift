@@ -138,4 +138,48 @@ final class APITesterStoreTabsTests: XCTestCase {
         XCTAssertFalse(tab.isPreview)                 // pinned
         XCTAssertEqual(tab.request.folderID, folderID)
     }
+
+    func testDeleteClosesOpenTabAndDoesNotResurrect() throws {
+        let (store, _, _) = try makeStore()
+        let a = try seed(store, name: "A")
+        store.openRequest(id: a.id, pinned: true)
+        XCTAssertTrue(store.tabs.contains { $0.requestID == a.id })
+
+        store.delete(id: a.id)
+
+        // No tab should still reference the deleted request.
+        XCTAssertFalse(store.tabs.contains { $0.requestID == a.id })
+        // The row itself is gone from the list.
+        XCTAssertFalse(store.requests.contains { $0.id == a.id })
+        // A's tab was the only one open, so we should have fallen back to the
+        // empty state — editing must no longer reference A's id, otherwise a
+        // later autosave could write A's row straight back into the store.
+        XCTAssertNil(store.activeTabID)
+        XCTAssertNotEqual(store.editing.id, a.id)
+
+        // Simulate the user typing into the (now-reset) editing buffer, then
+        // force the debounced autosave to run early via a public flush path
+        // (flushPendingSave() itself is private, but every public entry
+        // point — here newRequest() — flushes pending work first).
+        store.editing.urlString = "https://example.com/after-delete"
+        store.newRequest()
+
+        XCTAssertFalse(store.requests.contains { $0.id == a.id },
+                        "the deleted request must not be resurrected by a later autosave")
+    }
+
+    func testDuplicateOpensCopyAsActiveTab() throws {
+        let (store, _, _) = try makeStore()
+        let a = try seed(store, name: "A")
+        store.openRequest(id: a.id, pinned: true)
+        let originalTabID = store.activeTabID
+
+        store.duplicate(id: a.id)
+
+        let activeTab = try XCTUnwrap(store.tabs.first { $0.id == store.activeTabID })
+        XCTAssertNotEqual(activeTab.requestID, a.id)     // the copy, not the original
+        XCTAssertFalse(activeTab.isPreview)              // pinned
+        XCTAssertNotEqual(store.activeTabID, originalTabID)
+        XCTAssertEqual(store.requests.count, 2)
+    }
 }

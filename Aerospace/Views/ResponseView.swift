@@ -3,7 +3,8 @@
 //  Aerospace
 //
 //  Shows the outcome of the last sent request: a status pill, timing/size,
-//  and a Body / Headers switcher. JSON bodies are pretty-printed via JsonViewer.
+//  and a Body / Headers switcher. JSON bodies are rendered via ResponseTextView
+//  using JSONHighlighter.
 //
 
 import SwiftUI
