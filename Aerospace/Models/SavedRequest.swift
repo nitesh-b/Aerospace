@@ -18,6 +18,10 @@ nonisolated struct SavedRequest: Identifiable, Codable, Hashable, Sendable {
     var bearerToken: String
     var bodyKind: BodyKind
     var bodyText: String
+    /// Folder this request lives in. nil = root (unfiled).
+    var folderID: UUID?
+    /// Order within the parent folder (or root). Lower sorts first.
+    var sortIndex: Int
     /// When true, an N10 HMAC signature and the 10play identity headers are
     /// added at send time (see N10Signer). The API key itself lives in the
     /// Keychain, not on the request.
@@ -39,6 +43,8 @@ nonisolated struct SavedRequest: Identifiable, Codable, Hashable, Sendable {
         bearerToken: String = "",
         bodyKind: BodyKind = .none,
         bodyText: String = "",
+        folderID: UUID? = nil,
+        sortIndex: Int = 0,
         n10SigningEnabled: Bool = false,
         n10AppVersion: String = "1.0",
         n10SystemName: String = "iOS",
@@ -56,6 +62,8 @@ nonisolated struct SavedRequest: Identifiable, Codable, Hashable, Sendable {
         self.bearerToken = bearerToken
         self.bodyKind = bodyKind
         self.bodyText = bodyText
+        self.folderID = folderID
+        self.sortIndex = sortIndex
         self.n10SigningEnabled = n10SigningEnabled
         self.n10AppVersion = n10AppVersion
         self.n10SystemName = n10SystemName
@@ -88,6 +96,8 @@ nonisolated struct SavedRequest: Identifiable, Codable, Hashable, Sendable {
             bearerToken: bearerToken,
             bodyKind: bodyKind,
             bodyText: bodyText,
+            folderID: folderID,
+            sortIndex: sortIndex,
             n10SigningEnabled: n10SigningEnabled,
             n10AppVersion: n10AppVersion,
             n10SystemName: n10SystemName,

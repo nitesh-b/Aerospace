@@ -22,6 +22,21 @@ final class SavedRequestCodableTests: XCTestCase {
         XCTAssertEqual(decoded.queryParams.first?.isEnabled, false)
         XCTAssertEqual(decoded.queryParams.first?.id, original.queryParams.first?.id)
     }
+
+    func testFolderFieldsRoundTripAndDefault() throws {
+        // Default values when omitted.
+        let plain = SavedRequest(name: "X")
+        XCTAssertNil(plain.folderID)
+        XCTAssertEqual(plain.sortIndex, 0)
+
+        // Explicit values survive a Codable round-trip.
+        let folder = UUID()
+        let original = SavedRequest(name: "Y", folderID: folder, sortIndex: 7)
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(SavedRequest.self, from: data)
+        XCTAssertEqual(decoded.folderID, folder)
+        XCTAssertEqual(decoded.sortIndex, 7)
+    }
 }
 
 final class SQLiteRequestStoreTests: XCTestCase {
