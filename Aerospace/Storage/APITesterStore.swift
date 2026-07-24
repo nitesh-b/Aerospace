@@ -196,11 +196,11 @@ final class APITesterStore: ObservableObject {
     }
 
     private func performAutoSave() {
+        autoSaveWork = nil
         // Ephemeral (unsaved) active tab: never auto-persist to the request list.
         if let activeTabID, let tab = tabs.first(where: { $0.id == activeTabID }), tab.requestID == nil {
             return
         }
-        autoSaveWork = nil
         let alreadyPersisted = requests.contains { $0.id == editing.id }
         guard alreadyPersisted || !editing.isEffectivelyEmpty else { return }
 
