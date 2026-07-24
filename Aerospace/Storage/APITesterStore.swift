@@ -152,10 +152,16 @@ final class APITesterStore: ObservableObject {
         editing = SavedRequest()
         isLoadingSelection = false
         selectedID = nil            // lazily inserted on first meaningful edit
-        // Open it as a preview tab so it appears in the tab bar.
-        let tab = OpenTab(requestID: editing.id, request: editing, isPreview: true)
-        tabs.append(tab)
-        activeTabID = tab.id
+        // Reuse an existing preview tab, else append — mirrors openRequest's
+        // preview-reuse so at most one tab is ever marked `isPreview`.
+        if let idx = tabs.firstIndex(where: { $0.isPreview }) {
+            tabs[idx] = OpenTab(id: tabs[idx].id, requestID: editing.id, request: editing, isPreview: true)
+            activeTabID = tabs[idx].id
+        } else {
+            let tab = OpenTab(requestID: editing.id, request: editing, isPreview: true)
+            tabs.append(tab)
+            activeTabID = tab.id
+        }
         persistTabs()
     }
 

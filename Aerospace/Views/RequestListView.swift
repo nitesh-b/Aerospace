@@ -108,6 +108,7 @@ struct RequestListView: View {
             Button("Rename") { renameText = folder.name; renaming = folder.id }
             Button("Delete", role: .destructive) { store.deleteFolder(id: folder.id) }
         }
+        .onDrag { NSItemProvider(object: "fld:\(folder.id.uuidString)" as NSString) }
         .onDrop(of: [.text], isTargeted: nil) { providers in
             handleDrop(providers, intoFolder: folder.id)
         }

@@ -110,4 +110,32 @@ final class APITesterStoreTabsTests: XCTestCase {
         XCTAssertEqual(store.lastResponse?.statusCode, 200)
         _ = tabB
     }
+
+    func testNewRequestReusesSinglePreviewTab() throws {
+        let (store, _, _) = try makeStore()
+        let a = try seed(store, name: "A")
+        store.openRequest(id: a.id, pinned: false)   // opens a preview tab for A
+        XCTAssertEqual(store.tabs.count, 1)
+        XCTAssertTrue(store.tabs[0].isPreview)
+
+        store.newRequest()
+
+        XCTAssertEqual(store.tabs.filter { $0.isPreview }.count, 1)
+        XCTAssertEqual(store.tabs.count, 1)          // reused, not appended
+        let activeTab = try XCTUnwrap(store.tabs.first { $0.id == store.activeTabID })
+        XCTAssertTrue(activeTab.isPreview)
+        XCTAssertNotEqual(activeTab.requestID, a.id) // now the fresh blank request
+    }
+
+    func testNewRequestInFolderOpensPinnedTabWithFolder() throws {
+        let (store, _, _) = try makeStore()
+        let folderID = UUID()
+
+        store.newRequest(inFolder: folderID)
+
+        let tab = try XCTUnwrap(store.tabs.last)
+        XCTAssertEqual(store.activeTabID, tab.id)
+        XCTAssertFalse(tab.isPreview)                 // pinned
+        XCTAssertEqual(tab.request.folderID, folderID)
+    }
 }
