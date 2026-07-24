@@ -19,8 +19,16 @@ final class APITesterStore: ObservableObject {
     @Published var activeTabID: OpenTab.ID?
     private static let openTabsKey = "api.openTabs"
     private static let activeTabKey = "api.activeTab"
-    @Published private(set) var isSending = false
-    @Published private(set) var lastResponse: APIResponse?
+    @Published private(set) var responsesByTab: [OpenTab.ID: APIResponse] = [:]
+    @Published private(set) var sendingTabs: Set<OpenTab.ID> = []
+
+    var lastResponse: APIResponse? { activeTabID.flatMap { responsesByTab[$0] } }
+    var isSending: Bool { activeTabID.map { sendingTabs.contains($0) } ?? false }
+
+    /// Test seam.
+    func debugSetResponse(_ response: APIResponse, forTab id: OpenTab.ID) {
+        responsesByTab[id] = response
+    }
 
     /// The app-wide N10 API key (HMAC secret). Backed by the Keychain, never
     /// stored in the request database and never sent as a header.
@@ -66,7 +74,7 @@ final class APITesterStore: ObservableObject {
     private let store: SQLiteRequestStore
     private let defaults: UserDefaults
     private var autoSaveWork: DispatchWorkItem?
-    private var sendTask: Task<Void, Never>?
+    private var sendTasksByTab: [OpenTab.ID: Task<Void, Never>] = [:]
     /// Suppresses auto-save while we programmatically replace `editing`.
     private var isLoadingSelection = false
 
@@ -188,6 +196,10 @@ final class APITesterStore: ObservableObject {
     }
 
     private func performAutoSave() {
+        // Ephemeral (unsaved) active tab: never auto-persist to the request list.
+        if let activeTabID, let tab = tabs.first(where: { $0.id == activeTabID }), tab.requestID == nil {
+            return
+        }
         autoSaveWork = nil
         let alreadyPersisted = requests.contains { $0.id == editing.id }
         guard alreadyPersisted || !editing.isEffectivelyEmpty else { return }
@@ -354,12 +366,31 @@ final class APITesterStore: ObservableObject {
         guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
         let wasActive = activeTabID == id
         tabs.remove(at: idx)
+        sendTasksByTab[id]?.cancel()
+        sendTasksByTab[id] = nil
+        responsesByTab[id] = nil
+        sendingTabs.remove(id)
         if wasActive {
             let neighbor = tabs[safe: idx] ?? tabs[safe: idx - 1] ?? tabs.last
             activeTabID = neighbor?.id
             loadActiveTabIntoEditing()
         }
         persistTabs()
+    }
+
+    func openEphemeralGet(url: URL) {
+        flushPendingSave()
+        let request = SavedRequest(name: url.host ?? "Request", method: .get,
+                                   urlString: url.absoluteString)
+        let tab = OpenTab(requestID: nil, request: request, isPreview: false)
+        tabs.append(tab)
+        activeTabID = tab.id
+        isLoadingSelection = true
+        editing = request
+        selectedID = nil
+        isLoadingSelection = false
+        persistTabs()
+        send()
     }
 
     private func writeEditingIntoActiveTab() {
@@ -375,13 +406,13 @@ final class APITesterStore: ObservableObject {
     // MARK: - Sending
 
     func send() {
+        guard let tabID = activeTabID else { return }
         var request: URLRequest
         do {
             request = try RequestBuilder().makeURLRequest(from: editing, variables: variablesDictionary)
         } catch {
-            lastResponse = APIResponse(
-                outcome: .failure((error as? LocalizedError)?.errorDescription ?? "\(error)")
-            )
+            responsesByTab[tabID] = APIResponse(
+                outcome: .failure((error as? LocalizedError)?.errorDescription ?? "\(error)"))
             return
         }
 
@@ -389,7 +420,7 @@ final class APITesterStore: ObservableObject {
         if editing.n10SigningEnabled {
             let key = n10APIKey.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !key.isEmpty else {
-                lastResponse = APIResponse(outcome: .failure(
+                responsesByTab[tabID] = APIResponse(outcome: .failure(
                     "N10 signing is on but no API key is set. Add it in the N10 section."))
                 return
             }
@@ -407,21 +438,22 @@ final class APITesterStore: ObservableObject {
         }
 
         flushPendingSave()      // persist before sending
-        sendTask?.cancel()
-        isSending = true
+        sendTasksByTab[tabID]?.cancel()
+        sendingTabs.insert(tabID)
         let client = APIClient()
-        sendTask = Task { [weak self] in
+        sendTasksByTab[tabID] = Task { [weak self] in
             let response = await client.send(request)
             guard !Task.isCancelled else { return }
-            self?.lastResponse = response
-            self?.isSending = false
+            self?.responsesByTab[tabID] = response
+            self?.sendingTabs.remove(tabID)
         }
     }
 
     func cancelSend() {
-        sendTask?.cancel()
-        sendTask = nil
-        isSending = false
+        guard let tabID = activeTabID else { return }
+        sendTasksByTab[tabID]?.cancel()
+        sendTasksByTab[tabID] = nil
+        sendingTabs.remove(tabID)
     }
 }
 
