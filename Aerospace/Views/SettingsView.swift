@@ -8,6 +8,7 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+import Darwin
 
 struct SettingsView: View {
     @EnvironmentObject private var store: LogStore
@@ -15,6 +16,7 @@ struct SettingsView: View {
     @State private var portText = ""
     @State private var showClearConfirm = false
     @State private var exportMessage: String?
+    @State private var useLANAddress = false
 
     var body: some View {
         Form {
@@ -56,11 +58,40 @@ struct SettingsView: View {
                 }
                 Button("Restart") { store.restartServer() }
             }
-            Text("Send logs with: POST http://localhost:\(store.port)/log")
+            Toggle("Use LAN IP address", isOn: $useLANAddress)
+            Text("Send logs with: POST http://\(displayHost):\(store.port)/log")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
         }
+    }
+
+    private var displayHost: String {
+        guard useLANAddress else { return "localhost" }
+        return Self.lanIPAddress() ?? "localhost"
+    }
+
+    /// First non-loopback IPv4 address on an active interface (e.g. en0), for
+    /// reaching this Mac's server from another device on the same network.
+    private static func lanIPAddress() -> String? {
+        var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddrPtr) == 0, let firstAddr = ifaddrPtr else { return nil }
+        defer { freeifaddrs(ifaddrPtr) }
+
+        for ptr in sequence(first: firstAddr, next: { $0.pointee.ifa_next }) {
+            let flags = Int32(ptr.pointee.ifa_flags)
+            guard flags & IFF_UP != 0, flags & IFF_LOOPBACK == 0,
+                  let addr = ptr.pointee.ifa_addr, addr.pointee.sa_family == UInt8(AF_INET) else {
+                continue
+            }
+            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            let result = getnameinfo(addr, socklen_t(addr.pointee.sa_len),
+                                      &host, socklen_t(host.count),
+                                      nil, 0, NI_NUMERICHOST)
+            guard result == 0 else { continue }
+            return String(cString: host)
+        }
+        return nil
     }
 
     private var parsedPort: UInt16? {

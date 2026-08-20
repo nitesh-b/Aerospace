@@ -45,7 +45,7 @@ nonisolated struct SavedRequest: Identifiable, Codable, Hashable, Sendable {
         bodyText: String = "",
         folderID: UUID? = nil,
         sortIndex: Int = 0,
-        n10SigningEnabled: Bool = false,
+        n10SigningEnabled: Bool = true,
         n10AppVersion: String = "1.0",
         n10SystemName: String = "iOS",
         n10SystemVersion: String = "17.0",
