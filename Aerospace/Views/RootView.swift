@@ -10,6 +10,7 @@ import SwiftUI
 
 enum Tool: String, CaseIterable, Identifiable, Hashable {
     case logger
+    case oztamLog
     case apiTester
     case injector
 
@@ -18,6 +19,7 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .logger: return "Logger"
+        case .oztamLog: return "Oztam Log"
         case .apiTester: return "API Tester"
         case .injector: return "Injector"
         }
@@ -26,6 +28,7 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
     var systemImage: String {
         switch self {
         case .logger: return "doc.text.magnifyingglass"
+        case .oztamLog: return "waveform.path.ecg"
         case .apiTester: return "paperplane"
         case .injector: return "shippingbox"
         }
@@ -34,6 +37,7 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
     var subtitle: String {
         switch self {
         case .logger: return "Receive & inspect logs"
+        case .oztamLog: return "Tail OzTAM meter events"
         case .apiTester: return "Build & send requests"
         case .injector: return "Publish OTA bundles"
         }
@@ -64,6 +68,8 @@ struct RootView: View {
             switch selectedTool {
             case .logger:
                 LoggerToolView()
+            case .oztamLog:
+                OztamLogToolView()
             case .apiTester:
                 APITesterView()
             case .injector:
@@ -76,6 +82,7 @@ struct RootView: View {
 #Preview {
     RootView()
         .environmentObject(LogStore())
+        .environmentObject(OztamStore())
         .environmentObject(APITesterStore())
         .environmentObject(InjectorStore())
         .frame(width: 1000, height: 640)

@@ -11,6 +11,7 @@ import SwiftUI
 @main
 struct AerospaceApp: App {
     @StateObject private var store = LogStore()
+    @StateObject private var oztamStore = OztamStore()
     @StateObject private var apiStore = APITesterStore()
     @StateObject private var injectorStore = InjectorStore()
 
@@ -18,6 +19,7 @@ struct AerospaceApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(store)
+                .environmentObject(oztamStore)
                 .environmentObject(apiStore)
                 .environmentObject(injectorStore)
                 .frame(minWidth: 960, minHeight: 600)
