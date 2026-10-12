@@ -119,6 +119,26 @@ final class PauseAdMetadataTests: XCTestCase {
         XCTAssertTrue(text.contains("\"upNextModifierTime\": 0"), text)
     }
 
+    func testNumbersMatchJSONStringify() throws {
+        // Expected values from node: JSON.stringify([...])
+        XCTAssertEqual(try PauseAdMetadata.number(3.86666656), "3.86666656")
+        XCTAssertEqual(try PauseAdMetadata.number(4.01666689), "4.01666689")
+        XCTAssertEqual(try PauseAdMetadata.number(12.3833332), "12.3833332")
+        XCTAssertEqual(try PauseAdMetadata.number(0.1 + 0.2), "0.30000000000000004")
+        XCTAssertEqual(try PauseAdMetadata.number(0), "0")
+        XCTAssertEqual(try PauseAdMetadata.number(-0.0), "0")
+        XCTAssertEqual(try PauseAdMetadata.number(4), "4")
+        XCTAssertEqual(try PauseAdMetadata.number(2.5), "2.5")
+    }
+
+    func testNonFiniteDurationCannotBeWritten() {
+        var m = complete()
+        m.duration = .infinity
+        XCTAssertThrowsError(try m.jsonData())
+        m.duration = .nan
+        XCTAssertThrowsError(try m.jsonData())
+    }
+
     func testJSONEscapesStrings() throws {
         var m = complete()
         m.adBrandName = "Quote \" and \\ slash/"

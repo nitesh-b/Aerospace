@@ -139,11 +139,11 @@ nonisolated struct PauseAdMetadata: Hashable, Sendable {
             ("loop", try Self.fragment(loop)),
             ("target", try Self.fragment(target)),
             ("lottieTarget", try Self.fragment(lottieTarget)),
-            ("duration", try Self.fragment(duration)),
+            ("duration", try Self.number(duration)),
             ("adBrandName", try Self.fragment(adBrandName)),
             ("adCampaign", try Self.fragment(adCampaign)),
             ("adIndustry", try Self.fragment(adIndustry)),
-            ("upNextModifierTime", try Self.fragment(upNextModifierTime)),
+            ("upNextModifierTime", try Self.number(upNextModifierTime)),
         ]
         for key in extraFields.keys.sorted() {
             pairs.append((key, extraFields[key]!))
@@ -152,6 +152,21 @@ nonisolated struct PauseAdMetadata: Hashable, Sendable {
             .map { "\t\(try Self.fragment($0.0)): \($0.1)" }
             .joined(separator: ",\n")
         return Data("{\n\(body)\n}\n".utf8)
+    }
+
+    enum EncodeError: Error, LocalizedError {
+        case nonFiniteNumber
+
+        var errorDescription: String? { "Duration and up-next time must be finite numbers" }
+    }
+
+    /// Shortest round-trip form, integers without ".0" — what JS
+    /// `JSON.stringify` (youi.ads) writes. JSONSerialization's output depends
+    /// on the SDK the binary links against (legacy builds print %.17g noise).
+    static func number(_ value: Double) throws -> String {
+        guard value.isFinite else { throw EncodeError.nonFiniteNumber }
+        if value == value.rounded(), abs(value) < 1e15 { return String(Int64(value)) }
+        return "\(value)"
     }
 
     private static func fragment(_ value: Any) throws -> String {
