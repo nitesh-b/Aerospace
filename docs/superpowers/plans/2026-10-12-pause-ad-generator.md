@@ -13,7 +13,7 @@
 | Hosting | `/files/*` route added to Logger server (57333). Ads served only while Logger server runs. |
 | Destination layout | Full youi.ads tree under destination root: `ads/{sales\|house}/{YYYY}/{folder}/{MM}{Mon}/pause/p-{job}/v{n}/` |
 | Re-run same job | Prompt: overwrite latest version / create next version / cancel |
-| Image swap | Per file with same name, copy `assets/drawable/default/X` over `images/X` **in the destination copy only** when smaller. Source folder never mutated. Report swaps. |
+| Image swap | Per file, only when youi is smaller **and** pixel dimensions match, with same name, copy `assets/drawable/default/X` over `images/X` **in the destination copy only** when smaller. Source folder never mutated. Report swaps. |
 | `generate_manifest.rb` | Ported to Swift. No C++ (no benefit; app is pure Swift). |
 | 7z | Replaced with `NSFileCoordinator(.forUploading)` zip; zip root entry `RemoteManifest/`. |
 | Deploy wipe | CLI `rm -rf deployments` NOT replicated. Only the target zip is written. |
@@ -30,6 +30,8 @@
   - `duration` = `duration:` of the `markers` block containing `Ad-In` in `*.timeline.log`. **Improvement:** fallback to `data.json` marker `cm == "Ad-In"` → `dr / fr` (verified equal for Specsavers: 232/60 = 3.8667 vs 3.86666656).
   - `loop` = any `markers` chunk contains `Loop` (also check lottie markers `cm`).
   - brand/campaign/industry from form; `upNextModifierTime` default 0.
+- **inspector validated** against all 299 repo ads with metadata: 295 identical derived fields; 4 differences are wrong committed metadata (stale warrl duration, 1.0 fallbacks, hand-edited target).
+- **target choice:** multiple main layouts → prefer `{aepPrefix}_main`; same layout in several device folders → prefer `assets/layout/tv/`; `tv-rklow` ignored (as CLI).
 - **gen:** copy `server/` → `manifests/RemoteManifest/` excluding extensions `.log`, `.aep` and names `.`, `..`, `.DS_Store`, `__MACOSX`, `.git`; write `RemoteManifest.json` `{manifest_version:"1.0.0", minimum_engine_version:"4.6.0", maximum_engine_version:"999.999.999", asset_catalog:[{name, children?}]}` (pretty, trailing newline; written before metadata copy so it does not list `metadata.json`). Then write `RemoteManifest/metadata.json` with `adBrandName/adCampaign/adIndustry` → lowercase, remove all `&` and `-`, collapse 2+ spaces to one.
 - **deploy:** zip `RemoteManifest/` → `deployments/{type}/{year}/{folder}/{MMMon}/pause/p-{job}/v{n}/{title}.zip`, `title = target.split("_")[0]`, `()` → `_`, whitespace → `_`.
 - **hosting:** `GET /files/<rel>` → `<destinationRoot>/<rel>` (percent-decoded). Added: traversal guard (resolved path must stay under root), HEAD, MIME map (json, png, jpg, js, zip, txt…), `Access-Control-Allow-Origin: *`.
@@ -70,7 +72,7 @@
 
 - [x] **1. Metadata model + normalizer.** Ordered writer; normalizer parity cases (`"Style and fashion"` → `"style and fashion"`, `"Big-Brother & Co"` → `"bigbrother co"`, double spaces). Validation: `isDeployable` requires non-empty brand/campaign/industry, target, lottieTarget, duration > 0.
 - [x] **2. Job paths.** `p-` prefixing, en-GB month folder, version discovery (`v1…vn`), deployment path/title sanitising.
-- [ ] **3. Inspector.** Fixture-built temp folders: lottie+youi, lottie-only (duration from `data.json`), missing image ref (error), `Loop` marker, `_Main` vs `_main`, size thresholds (warn > 3 MB, error > 5 MB total images), image swap candidates.
+- [x] **3. Inspector.** Fixture-built temp folders: lottie+youi, lottie-only (duration from `data.json`), missing image ref (error), `Loop` marker, `_Main` vs `_main`, size thresholds (warn > 3 MB, stronger warn > 5 MB — advisory only, Big Brother 2026 shipped at 7–9 MB), image swap candidates.
 - [ ] **4. RemoteManifestBuilder.** Exclusions, nested children, existing bundle replaced, JSON shape. One-off manual parity check: run Ruby + Swift on the Specsavers Downloads folder in scratch dirs, compare trees order-insensitively.
 - [ ] **5. Generator.** Fresh job, overwrite version, next version, image swap applied to destination only, source untouched, metadata written to `v{n}/metadata.json` and normalized copy in `RemoteManifest/`.
 - [ ] **6. Deployer.** Blocks on missing fields; zip root is `RemoteManifest/`; filename; only target zip written. Verify entry layout against an existing youi.ads deployment zip.

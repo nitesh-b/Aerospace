@@ -50,10 +50,11 @@ nonisolated struct PauseAdMetadata: Hashable, Sendable {
     // MARK: - Deploy validation
 
     enum Field: String, CaseIterable, Sendable {
-        case target, lottieTarget, duration, adBrandName, adCampaign, adIndustry
+        case loop, target, lottieTarget, duration, adBrandName, adCampaign, adIndustry
 
         var label: String {
             switch self {
+            case .loop: return "Loop"
             case .target: return "Target"
             case .lottieTarget: return "Lottie target"
             case .duration: return "Duration"
