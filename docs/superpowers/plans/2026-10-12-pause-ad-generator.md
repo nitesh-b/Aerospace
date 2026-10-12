@@ -22,7 +22,8 @@
 
 ## Behaviour parity reference (youi.ads)
 
-- **setup:** month folder = `MM` + en-GB short month (`10Oct`, September → `Sept`). Ticket prefixed `p-` unless already. Year = current year.
+- **setup:** month folder = `MM` + en-GB short month (`10Oct`, September → `Sept`). Ticket prefixed `p-` unless already (**improvement:** `P-` also recognised, CLI produced `p-P-…`). Year = current year. Month names from a fixed table — Foundation en_GB yields `Sep`, Node yields `Sept`.
+- **existing job lookup (improvement):** by ticket across `ads/{type}/*/*/*/pause/`; CLI only noticed a clash in the current month folder.
 - **auto (metadata derivation):**
   - `target` = basename of `*_main.layout` / `*_Main.layout`; fallback to `.aep` prefix (warn: youi.rn will not render).
   - `lottieTarget` = `data.json` when present.
@@ -68,7 +69,7 @@
 ## Tasks
 
 - [x] **1. Metadata model + normalizer.** Ordered writer; normalizer parity cases (`"Style and fashion"` → `"style and fashion"`, `"Big-Brother & Co"` → `"bigbrother co"`, double spaces). Validation: `isDeployable` requires non-empty brand/campaign/industry, target, lottieTarget, duration > 0.
-- [ ] **2. Job paths.** `p-` prefixing, en-GB month folder, version discovery (`v1…vn`), deployment path/title sanitising.
+- [x] **2. Job paths.** `p-` prefixing, en-GB month folder, version discovery (`v1…vn`), deployment path/title sanitising.
 - [ ] **3. Inspector.** Fixture-built temp folders: lottie+youi, lottie-only (duration from `data.json`), missing image ref (error), `Loop` marker, `_Main` vs `_main`, size thresholds (warn > 3 MB, error > 5 MB total images), image swap candidates.
 - [ ] **4. RemoteManifestBuilder.** Exclusions, nested children, existing bundle replaced, JSON shape. One-off manual parity check: run Ruby + Swift on the Specsavers Downloads folder in scratch dirs, compare trees order-insensitively.
 - [ ] **5. Generator.** Fresh job, overwrite version, next version, image swap applied to destination only, source untouched, metadata written to `v{n}/metadata.json` and normalized copy in `RemoteManifest/`.
