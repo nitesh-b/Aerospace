@@ -54,6 +54,7 @@ nonisolated enum PauseAdGenerator {
         case interactiveAdUnsupported
         case invalidDuration
         case missingField(PauseAdMetadata.Field)
+        case notGenerated(Int)
 
         var errorDescription: String? {
             switch self {
@@ -73,6 +74,8 @@ nonisolated enum PauseAdGenerator {
                 return "The lottie target file isn't at the top of the source folder."
             case .missingField(let field):
                 return "\(field.label) is required."
+            case .notGenerated(let version):
+                return "v\(version) hasn't been generated yet."
             }
         }
     }
@@ -155,6 +158,33 @@ nonisolated enum PauseAdGenerator {
         return Result(job: job, version: version, versionURL: versionURL,
                       hostedMetadataPath: job.hostedMetadataPath(version),
                       appliedSwaps: appliedSwaps, inspection: inspection, manifest: manifest)
+    }
+
+    // MARK: - Metadata only
+
+    /// Rewrites `v{n}/metadata.json` and `RemoteManifest/metadata.json`
+    /// without recopying assets — e.g. brand/campaign/industry filled in
+    /// after local testing.
+    static func updateMetadata(_ metadata: PauseAdMetadata, job: PauseAdJob, version: Int,
+                               destinationRoot: URL, fileManager: FileManager = .default) throws {
+        let root = destinationRoot.standardizedFileURL.resolvingSymlinksInPath()
+        let bundle = root.appendingPathComponent(job.remoteManifestPath(version), isDirectory: true)
+        guard fileManager.fileExists(atPath: bundle.appendingPathComponent("RemoteManifest.json").path) else {
+            throw GenerateError.notGenerated(version)
+        }
+        if metadata.extraFields["runtimeSourcePath"] != nil { throw GenerateError.interactiveAdUnsupported }
+        if metadata.target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw GenerateError.missingField(.target)
+        }
+        let lottieTarget = metadata.lottieTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+        if lottieTarget.isEmpty || !fileManager.fileExists(atPath: bundle.appendingPathComponent(lottieTarget).path) {
+            throw GenerateError.missingField(.lottieTarget)
+        }
+        guard metadata.duration > 0, metadata.duration.isFinite else { throw GenerateError.invalidDuration }
+
+        try metadata.jsonData().write(to: root.appendingPathComponent(job.metadataPath(version)), options: .atomic)
+        try metadata.normalizedForManifest().jsonData().write(
+            to: root.appendingPathComponent(job.hostedMetadataPath(version)), options: .atomic)
     }
 
     // MARK: - Helpers
