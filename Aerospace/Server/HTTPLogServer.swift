@@ -4,8 +4,9 @@
 //
 //  A tiny HTTP server built on Apple's Network framework (no third-party
 //  dependencies). It accepts POSTs to /log, parses them into LogEvents, and
-//  forwards them via the `onEvent` callback. Runs entirely off the main
-//  thread on its own dispatch queue.
+//  forwards them via the `onEvent` callback. It also serves generated pause
+//  ads at GET/HEAD /files/* (see PauseAdFileResolver). Runs entirely off the
+//  main thread on its own dispatch queue.
 //
 
 import Foundation
@@ -39,6 +40,9 @@ nonisolated final class HTTPLogServer: @unchecked Sendable {
     var onStateChange: (@Sendable (ServerState) -> Void)?
 
     private let queue = DispatchQueue(label: "com.networkten.aerospace.httpserver")
+    /// Confined to `queue`; install with `setFileHandling`.
+    private var fileResolver: PauseAdFileResolver?
+    private var onFileRequest: (@Sendable (PauseAdFileRequest) -> Void)?
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
 
@@ -94,6 +98,16 @@ nonisolated final class HTTPLogServer: @unchecked Sendable {
 
     func stop() {
         queue.async { [self] in stopLocked() }
+    }
+
+    /// Enables `/files/*`. `onRequest` is called on the server's queue for
+    /// every file request, served or not. Pass nil to disable.
+    func setFileHandling(resolver: PauseAdFileResolver?,
+                         onRequest: (@Sendable (PauseAdFileRequest) -> Void)? = nil) {
+        queue.async { [self] in
+            fileResolver = resolver
+            onFileRequest = onRequest
+        }
     }
 
     /// Must be called on `queue`.
@@ -180,6 +194,9 @@ nonisolated final class HTTPLogServer: @unchecked Sendable {
                 respond(connection, status: 400, reason: "Bad Request",
                         json: ["error": (error as? LogRequestError)?.localizedDescription ?? "\(error)"])
             }
+        case (let method, let path) where (method == "GET" || method == "HEAD")
+                                          && PauseAdFileResolver.handles(requestPath: path):
+            serveFile(request, on: connection)
         case ("GET", "/health"), ("HEAD", "/health"):
             respond(connection, status: 200, reason: "OK", json: ["status": "healthy"])
         case ("OPTIONS", _):
@@ -188,6 +205,48 @@ nonisolated final class HTTPLogServer: @unchecked Sendable {
             respond(connection, status: 404, reason: "Not Found",
                     json: ["error": "No route for \(request.method) \(request.path)"])
         }
+    }
+
+    // MARK: - Files
+
+    private func serveFile(_ request: HTTPRequest, on connection: NWConnection) {
+        let isHead = request.method == "HEAD"
+        var status = 404
+        var bytes = 0
+
+        switch fileResolver?.resolve(requestPath: request.path) ?? .noRoot {
+        case .file(let url, let mimeType):
+            if let data = try? Data(contentsOf: url, options: .mappedIfSafe) {
+                status = 200
+                bytes = data.count
+                respond(connection, status: 200, reason: "OK", contentType: mimeType,
+                        body: data, includeBody: !isHead,
+                        extraHeaders: ["Cache-Control": "no-store"])
+            } else {
+                status = 500
+                respond(connection, status: 500, reason: "Internal Server Error",
+                        json: ["error": "Could not read \(url.lastPathComponent)"])
+            }
+        case .notFound:
+            respond(connection, status: 404, reason: "Not Found", json: ["error": "Not found"])
+        case .forbidden:
+            status = 403
+            respond(connection, status: 403, reason: "Forbidden", json: ["error": "Forbidden"])
+        case .noRoot:
+            respond(connection, status: 404, reason: "Not Found",
+                    json: ["error": "No pause ad destination folder is configured in Aerospace"])
+        }
+
+        onFileRequest?(PauseAdFileRequest(date: Date(), method: request.method, path: request.path,
+                                          status: status, bytes: bytes,
+                                          client: Self.clientDescription(connection.endpoint)))
+    }
+
+    private static func clientDescription(_ endpoint: NWEndpoint) -> String {
+        if case .hostPort(let host, _) = endpoint {
+            return "\(host)".components(separatedBy: "%").first ?? "\(host)"
+        }
+        return "\(endpoint)"
     }
 
     // MARK: - Responses
@@ -199,18 +258,27 @@ nonisolated final class HTTPLogServer: @unchecked Sendable {
            let data = try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]) {
             body = data
         }
+        respond(connection, status: status, reason: reason, contentType: "application/json",
+                body: body, close: close)
+    }
 
+    private func respond(_ connection: NWConnection, status: Int, reason: String,
+                         contentType: String, body: Data, includeBody: Bool = true,
+                         extraHeaders: [String: String] = [:], close: Bool = false) {
         var head = "HTTP/1.1 \(status) \(reason)\r\n"
-        head += "Content-Type: application/json\r\n"
+        head += "Content-Type: \(contentType)\r\n"
         head += "Content-Length: \(body.count)\r\n"
         head += "Access-Control-Allow-Origin: *\r\n"
         head += "Access-Control-Allow-Headers: Content-Type\r\n"
-        head += "Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n"
+        head += "Access-Control-Allow-Methods: POST, GET, HEAD, OPTIONS\r\n"
+        for (name, value) in extraHeaders.sorted(by: { $0.key < $1.key }) {
+            head += "\(name): \(value)\r\n"
+        }
         if close { head += "Connection: close\r\n" }
         head += "\r\n"
 
         var response = Data(head.utf8)
-        response.append(body)
+        if includeBody { response.append(body) }
 
         connection.send(content: response, completion: .contentProcessed { _ in
             if close { connection.cancel() }

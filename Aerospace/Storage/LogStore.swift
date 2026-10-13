@@ -117,6 +117,12 @@ final class LogStore: ObservableObject {
         server.start(port: port)
     }
 
+    /// Serves pause ads at `/files/*` on this server (see PauseAdStore).
+    func setFileHandling(resolver: PauseAdFileResolver?,
+                         onRequest: (@Sendable (PauseAdFileRequest) -> Void)? = nil) {
+        server.setFileHandling(resolver: resolver, onRequest: onRequest)
+    }
+
     // MARK: - Ingestion
 
     private func ingest(_ event: LogEvent) {
