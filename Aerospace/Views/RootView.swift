@@ -13,6 +13,7 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
     case oztamLog
     case apiTester
     case injector
+    case pauseAds
 
     var id: String { rawValue }
 
@@ -22,6 +23,7 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
         case .oztamLog: return "Oztam Log"
         case .apiTester: return "API Tester"
         case .injector: return "Injector"
+        case .pauseAds: return "Pause Ads"
         }
     }
 
@@ -31,6 +33,7 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
         case .oztamLog: return "waveform.path.ecg"
         case .apiTester: return "paperplane"
         case .injector: return "shippingbox"
+        case .pauseAds: return "pause.rectangle"
         }
     }
 
@@ -40,6 +43,7 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
         case .oztamLog: return "Tail OzTAM meter events"
         case .apiTester: return "Build & send requests"
         case .injector: return "Publish OTA bundles"
+        case .pauseAds: return "Generate & host pause ads"
         }
     }
 }
@@ -74,6 +78,8 @@ struct RootView: View {
                 APITesterView()
             case .injector:
                 InjectorToolView()
+            case .pauseAds:
+                PauseAdToolView()
             }
         }
     }
@@ -85,5 +91,6 @@ struct RootView: View {
         .environmentObject(OztamStore())
         .environmentObject(APITesterStore())
         .environmentObject(InjectorStore())
+        .environmentObject(PauseAdStore())
         .frame(width: 1000, height: 640)
 }

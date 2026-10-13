@@ -191,6 +191,17 @@ final class PauseAdStoreTests: XCTestCase {
         XCTAssertEqual(store.existingVersions, [1])
     }
 
+    func testVersionChoiceStillRunsAfterDialogDismissalClearedPrompt() async {
+        // SwiftUI clears isPresented (→ versionPrompt = nil) before the button's Task runs.
+        let store = readyStore()
+        await store.generate()
+        await store.generate()
+        let shown = try? XCTUnwrap(store.versionPrompt)
+        store.versionPrompt = nil
+        await store.resolveVersionPrompt(.createNext, prompt: shown)
+        XCTAssertEqual(store.existingVersions, [1, 2])
+    }
+
     func testGenerateWithoutDestinationFails() async {
         let store = makeStore()
         store.setSource(source)

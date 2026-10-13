@@ -328,8 +328,10 @@ final class PauseAdStore: ObservableObject {
         await runGenerate(job: job, version: 1, mode: .create)
     }
 
-    func resolveVersionPrompt(_ choice: VersionChoice) async {
-        guard let prompt = versionPrompt else { return }
+    /// `prompt` defaults to the pending one; dialogs pass the prompt they
+    /// presented, since dismissal clears `versionPrompt` before the action runs.
+    func resolveVersionPrompt(_ choice: VersionChoice, prompt shown: VersionPrompt? = nil) async {
+        guard let prompt = shown ?? versionPrompt else { return }
         versionPrompt = nil
         switch choice {
         case .overwriteLatest: await runGenerate(job: prompt.job, version: prompt.latest, mode: .overwrite)
