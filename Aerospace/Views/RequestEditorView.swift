@@ -18,6 +18,7 @@ struct RequestEditorView: View {
         case body = "Body"
         case n10 = "N10"
         case variables = "Variables"
+        case proxy = "Proxy"
         var id: String { rawValue }
     }
     @State private var section: Section = .params
@@ -104,6 +105,8 @@ struct RequestEditorView: View {
         case .variables:
             let n = store.variables.filter { !$0.key.isEmpty }.count
             return n > 0 ? "Variables (\(n))" : "Variables"
+        case .proxy:
+            return store.proxy.isEnabled ? "Proxy •" : "Proxy"
         }
     }
 
@@ -126,6 +129,34 @@ struct RequestEditorView: View {
             n10Editor
         case .variables:
             variablesEditor
+        case .proxy:
+            proxyEditor
+        }
+    }
+
+    private var proxyEditor: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle("Route requests through a proxy", isOn: $store.proxy.isEnabled)
+                .toggleStyle(.switch)
+
+            HStack(alignment: .bottom) {
+                labeledField("Host", text: $store.proxy.host)
+                    .font(.system(.body, design: .monospaced))
+                labeledField("Port", text: $store.proxy.port)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(width: 90)
+            }
+            .disabled(!store.proxy.isEnabled)
+
+            if store.proxy.isEnabled && !store.proxy.isValid {
+                Label("Enter a host and a port between 1 and 65535.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2).foregroundStyle(.orange)
+            } else {
+                Label("Applies to every request (HTTP and HTTPS) · shared across all requests",
+                      systemImage: "network")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
         }
     }
 

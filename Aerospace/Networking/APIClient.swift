@@ -22,6 +22,15 @@ nonisolated struct APIClient: Sendable {
         self.session = session
     }
 
+    /// A session that routes through `proxy` when it is enabled and valid,
+    /// otherwise the shared session (direct / system proxy).
+    static func makeSession(proxy: ProxySettings) -> URLSession {
+        guard let dictionary = proxy.connectionProxyDictionary else { return .shared }
+        let config = URLSessionConfiguration.default
+        config.connectionProxyDictionary = dictionary
+        return URLSession(configuration: config)
+    }
+
     func send(_ request: URLRequest) async -> APIResponse {
         let clock = ContinuousClock()
         let start = clock.now

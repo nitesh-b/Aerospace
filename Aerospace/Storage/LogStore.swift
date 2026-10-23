@@ -123,6 +123,12 @@ final class LogStore: ObservableObject {
         server.setFileHandling(resolver: resolver, onRequest: onRequest)
     }
 
+    /// Serves the open dynamic config on this server (see DynamicConfigStore).
+    func setConfigHandling(host: DynamicConfigHost?,
+                           onRequest: (@Sendable (DynamicConfigRequest) -> Void)? = nil) {
+        server.setConfigHandling(host: host, onRequest: onRequest)
+    }
+
     // MARK: - Ingestion
 
     private func ingest(_ event: LogEvent) {

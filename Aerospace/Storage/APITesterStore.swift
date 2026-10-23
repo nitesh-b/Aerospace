@@ -46,6 +46,18 @@ final class APITesterStore: ObservableObject {
     }
     private static let variablesKey = "api.variables"
 
+    /// App-wide proxy every request is routed through when enabled. Persisted
+    /// as JSON in UserDefaults; changing it rebuilds the URL session.
+    @Published var proxy: ProxySettings {
+        didSet {
+            guard proxy != oldValue else { return }
+            saveProxy()
+            rebuildSession()
+        }
+    }
+    private static let proxyKey = "api.proxy"
+    private var session: URLSession = .shared
+
     /// Enabled, non-blank-keyed variables as a name → value dictionary, ready
     /// to hand to `RequestBuilder`. A later duplicate key wins.
     var variablesDictionary: [String: String] {
@@ -83,6 +95,7 @@ final class APITesterStore: ObservableObject {
         self.defaults = defaults
         n10APIKey = KeychainStore.read(account: Self.n10KeyAccount) ?? ""
         variables = Self.loadVariables(from: defaults)
+        proxy = Self.loadProxy(from: defaults)
         let all = self.store.fetchAll()
         requests = all
         folders = self.store.fetchAllFolders()
@@ -94,6 +107,7 @@ final class APITesterStore: ObservableObject {
             selectedID = nil
         }
         restoreTabs()
+        rebuildSession()            // didSet does not fire during init
     }
 
     // An explicit (trivial) deinit works around a toolchain crash: without one,
@@ -116,6 +130,27 @@ final class APITesterStore: ObservableObject {
     private func saveVariables() {
         guard let data = try? JSONEncoder().encode(variables) else { return }
         defaults.set(data, forKey: Self.variablesKey)
+    }
+
+    private static func loadProxy(from defaults: UserDefaults) -> ProxySettings {
+        guard let data = defaults.data(forKey: proxyKey),
+              let settings = try? JSONDecoder().decode(ProxySettings.self, from: data) else {
+            return ProxySettings()
+        }
+        return settings
+    }
+
+    private func saveProxy() {
+        guard let data = try? JSONEncoder().encode(proxy) else { return }
+        defaults.set(data, forKey: Self.proxyKey)
+    }
+
+    /// Swap in a session matching the current proxy. In-flight requests on the
+    /// old session are allowed to finish before it is invalidated.
+    private func rebuildSession() {
+        let old = session
+        session = APIClient.makeSession(proxy: proxy)
+        if old !== URLSession.shared { old.finishTasksAndInvalidate() }
     }
 
     private static func makeDefaultStore() -> SQLiteRequestStore {
@@ -468,6 +503,12 @@ final class APITesterStore: ObservableObject {
             return
         }
 
+        if proxy.isEnabled && !proxy.isValid {
+            responsesByTab[tabID] = APIResponse(outcome: .failure(
+                "Proxy is on but the host or port is invalid. Fix it in the Proxy section."))
+            return
+        }
+
         // N10 signing: computed over the FINAL URL at send time.
         if editing.n10SigningEnabled {
             let key = n10APIKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -492,7 +533,7 @@ final class APITesterStore: ObservableObject {
         flushPendingSave()      // persist before sending
         sendTasksByTab[tabID]?.cancel()
         sendingTabs.insert(tabID)
-        let client = APIClient()
+        let client = APIClient(session: session)
         sendTasksByTab[tabID] = Task { [weak self] in
             let response = await client.send(request)
             guard !Task.isCancelled else { return }

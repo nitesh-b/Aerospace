@@ -5,8 +5,9 @@
 //  A tiny HTTP server built on Apple's Network framework (no third-party
 //  dependencies). It accepts POSTs to /log, parses them into LogEvents, and
 //  forwards them via the `onEvent` callback. It also serves generated pause
-//  ads at GET/HEAD /files/* (see PauseAdFileResolver). Runs entirely off the
-//  main thread on its own dispatch queue.
+//  ads at GET/HEAD /files/* (see PauseAdFileResolver) and the open dynamic
+//  config at GET/HEAD /config/dynamic_config.json (see DynamicConfigHost).
+//  Runs entirely off the main thread on its own dispatch queue.
 //
 
 import Foundation
@@ -43,6 +44,9 @@ nonisolated final class HTTPLogServer: @unchecked Sendable {
     /// Confined to `queue`; install with `setFileHandling`.
     private var fileResolver: PauseAdFileResolver?
     private var onFileRequest: (@Sendable (PauseAdFileRequest) -> Void)?
+    /// Confined to `queue`; install with `setConfigHandling`.
+    private var configHost: DynamicConfigHost?
+    private var onConfigRequest: (@Sendable (DynamicConfigRequest) -> Void)?
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
 
@@ -107,6 +111,16 @@ nonisolated final class HTTPLogServer: @unchecked Sendable {
         queue.async { [self] in
             fileResolver = resolver
             onFileRequest = onRequest
+        }
+    }
+
+    /// Enables `/config/dynamic_config.json`. `onRequest` is called on the
+    /// server's queue for every request, served or not. Pass nil to disable.
+    func setConfigHandling(host: DynamicConfigHost?,
+                           onRequest: (@Sendable (DynamicConfigRequest) -> Void)? = nil) {
+        queue.async { [self] in
+            configHost = host
+            onConfigRequest = onRequest
         }
     }
 
@@ -197,6 +211,9 @@ nonisolated final class HTTPLogServer: @unchecked Sendable {
         case (let method, let path) where (method == "GET" || method == "HEAD")
                                           && PauseAdFileResolver.handles(requestPath: path):
             serveFile(request, on: connection)
+        case (let method, let path) where (method == "GET" || method == "HEAD")
+                                          && DynamicConfigHost.handles(requestPath: path):
+            serveConfig(request, on: connection)
         case ("GET", "/health"), ("HEAD", "/health"):
             respond(connection, status: 200, reason: "OK", json: ["status": "healthy"])
         case ("OPTIONS", _):
@@ -240,6 +257,32 @@ nonisolated final class HTTPLogServer: @unchecked Sendable {
         onFileRequest?(PauseAdFileRequest(date: Date(), method: request.method, path: request.path,
                                           status: status, bytes: bytes,
                                           client: Self.clientDescription(connection.endpoint)))
+    }
+
+    // MARK: - Dynamic config
+
+    private func serveConfig(_ request: HTTPRequest, on connection: NWConnection) {
+        var status = 404
+        var bytes = 0
+
+        switch configHost?.response() ?? .noConfig {
+        case .config(let data):
+            status = 200
+            bytes = data.count
+            respond(connection, status: 200, reason: "OK", contentType: "application/json; charset=utf-8",
+                    body: data, includeBody: request.method != "HEAD",
+                    extraHeaders: ["Cache-Control": "no-store"])
+        case .disabled:
+            respond(connection, status: 404, reason: "Not Found",
+                    json: ["error": "Dynamic config hosting is turned off in Aerospace"])
+        case .noConfig:
+            respond(connection, status: 404, reason: "Not Found",
+                    json: ["error": "No dynamic config is open in Aerospace"])
+        }
+
+        onConfigRequest?(DynamicConfigRequest(date: Date(), method: request.method, path: request.path,
+                                              status: status, bytes: bytes,
+                                              client: Self.clientDescription(connection.endpoint)))
     }
 
     private static func clientDescription(_ endpoint: NWEndpoint) -> String {

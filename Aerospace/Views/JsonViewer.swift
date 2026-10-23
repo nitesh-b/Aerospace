@@ -55,6 +55,8 @@ enum JSONHighlighter {
 struct JsonViewer: View {
     let json: String
     var title: String = "Payload"
+    /// Pretty-print with sorted keys; off for text that is already laid out.
+    var reformats = true
 
     @State private var copied = false
 
@@ -88,7 +90,7 @@ struct JsonViewer: View {
         .background(Color(nsColor: .textBackgroundColor))
     }
 
-    private var pretty: String { JSONHighlighter.pretty(json) }
+    private var pretty: String { reformats ? JSONHighlighter.pretty(json) : json }
 
     /// Very lightweight highlighting: colour JSON keys and string values.
     private var highlighted: AttributedString {

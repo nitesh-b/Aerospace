@@ -14,6 +14,7 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
     case apiTester
     case injector
     case pauseAds
+    case dynamicConfig
 
     var id: String { rawValue }
 
@@ -24,6 +25,7 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
         case .apiTester: return "API Tester"
         case .injector: return "Injector"
         case .pauseAds: return "Pause Ads"
+        case .dynamicConfig: return "Dynamic Config"
         }
     }
 
@@ -34,6 +36,7 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
         case .apiTester: return "paperplane"
         case .injector: return "shippingbox"
         case .pauseAds: return "pause.rectangle"
+        case .dynamicConfig: return "slider.horizontal.3"
         }
     }
 
@@ -44,6 +47,7 @@ enum Tool: String, CaseIterable, Identifiable, Hashable {
         case .apiTester: return "Build & send requests"
         case .injector: return "Publish OTA bundles"
         case .pauseAds: return "Generate & host pause ads"
+        case .dynamicConfig: return "Edit per-platform config"
         }
     }
 }
@@ -80,6 +84,8 @@ struct RootView: View {
                 InjectorToolView()
             case .pauseAds:
                 PauseAdToolView()
+            case .dynamicConfig:
+                DynamicConfigToolView()
             }
         }
     }
@@ -92,5 +98,6 @@ struct RootView: View {
         .environmentObject(APITesterStore())
         .environmentObject(InjectorStore())
         .environmentObject(PauseAdStore())
+        .environmentObject(DynamicConfigStore())
         .frame(width: 1000, height: 640)
 }
