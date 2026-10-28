@@ -218,4 +218,99 @@ final class APITesterStoreTabsTests: XCTestCase {
         let saved = try XCTUnwrap(store.requests.first { $0.id == ephemeralRequestID })
         XCTAssertEqual(saved.folderID, folder.id)
     }
+
+    // MARK: - Reordering
+
+    private func openPinned(_ store: APITesterStore, _ names: [String]) throws -> [OpenTab.ID] {
+        for name in names { store.openRequest(id: try seed(store, name: name).id, pinned: true) }
+        return store.tabs.map(\.id)
+    }
+
+    private func tabNames(_ store: APITesterStore) -> [String] { store.tabs.map(\.request.name) }
+
+    func testMoveTabLeftAndRight() throws {
+        let (store, _, _) = try makeStore()
+        let ids = try openPinned(store, ["A", "B", "C"])
+        store.moveTab(id: ids[2], by: -1)
+        XCTAssertEqual(tabNames(store), ["A", "C", "B"])
+        store.moveTab(id: ids[0], by: 1)
+        XCTAssertEqual(tabNames(store), ["C", "A", "B"])
+        XCTAssertEqual(store.activeTabID, ids[2])          // moving doesn't change the active tab
+    }
+
+    func testMoveTabClampsAtTheEnds() throws {
+        let (store, _, _) = try makeStore()
+        let ids = try openPinned(store, ["A", "B", "C"])
+        store.moveTab(id: ids[0], by: -1)
+        store.moveTab(id: ids[2], by: 5)
+        XCTAssertEqual(tabNames(store), ["A", "B", "C"])
+        store.moveTab(id: ids[0], to: 99)
+        XCTAssertEqual(tabNames(store), ["B", "C", "A"])
+        store.moveTab(id: ids[0], to: 0)
+        XCTAssertEqual(tabNames(store), ["A", "B", "C"])
+        store.moveTab(id: UUID(), to: 0)                    // unknown tab: no-op
+        XCTAssertEqual(tabNames(store), ["A", "B", "C"])
+    }
+
+    func testMoveTabToDropTarget() throws {
+        let (store, _, _) = try makeStore()
+        let ids = try openPinned(store, ["A", "B", "C", "D"])
+        store.moveTab(id: ids[0], to: 2)                    // dragged A onto C
+        XCTAssertEqual(tabNames(store), ["B", "C", "A", "D"])
+        store.moveTab(id: ids[3], to: 0)                    // dragged D onto B
+        XCTAssertEqual(tabNames(store), ["D", "B", "C", "A"])
+    }
+
+    func testTabOrderPersists() throws {
+        let suite = "order-\(UUID().uuidString)"
+        let path = NSTemporaryDirectory() + "aerospace-order-\(UUID().uuidString).sqlite"
+        let sqlite = try SQLiteRequestStore(path: path)
+        let defaults = UserDefaults(suiteName: suite)!
+        let store1 = APITesterStore(store: sqlite, defaults: defaults)
+        let ids = try openPinned(store1, ["A", "B", "C"])
+        store1.moveTab(id: ids[2], to: 0)
+        let store2 = APITesterStore(store: sqlite, defaults: defaults)
+        XCTAssertEqual(tabNames(store2), ["C", "A", "B"])
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    // MARK: - Variables
+
+    func testSetVariableAppendsANewOne() throws {
+        let (store, _, _) = try makeStore()
+        store.variables = [KeyValueItem(key: "host", value: "example.com")]
+        store.setVariable("token", to: "abc")
+        XCTAssertEqual(store.variables.map(\.key), ["host", "token"])
+        XCTAssertEqual(store.variablesDictionary, ["host": "example.com", "token": "abc"])
+    }
+
+    func testSetVariableReplacesInPlaceAndEnables() throws {
+        let (store, _, _) = try makeStore()
+        let old = KeyValueItem(key: "token", value: "old", isEnabled: false)
+        store.variables = [old, KeyValueItem(key: "host", value: "example.com")]
+        store.setVariable("token", to: "new")
+        XCTAssertEqual(store.variables.map(\.key), ["token", "host"])
+        XCTAssertEqual(store.variables[0].id, old.id)
+        XCTAssertEqual(store.variables[0].value, "new")
+        XCTAssertTrue(store.variables[0].isEnabled)
+    }
+
+    func testSetVariableDropsDuplicates() throws {
+        let (store, _, _) = try makeStore()
+        store.variables = [KeyValueItem(key: "token", value: "1"), KeyValueItem(key: "host", value: "h"),
+                           KeyValueItem(key: " token ", value: "2")]
+        store.setVariable("token", to: "3")
+        XCTAssertEqual(store.variables.map(\.key), ["token", "host"])
+        XCTAssertEqual(store.variablesDictionary["token"], "3")
+    }
+
+    func testSetVariablePersistsAndIgnoresBlankNames() throws {
+        let suite = "vars-\(UUID().uuidString)"
+        let (store, defaults, sqlite) = try makeStore(defaultsName: suite)
+        store.setVariable("  ", to: "x")
+        XCTAssertTrue(store.variables.isEmpty)
+        store.setVariable("token", to: "abc")
+        XCTAssertEqual(APITesterStore(store: sqlite, defaults: defaults).variablesDictionary, ["token": "abc"])
+        defaults.removePersistentDomain(forName: suite)
+    }
 }

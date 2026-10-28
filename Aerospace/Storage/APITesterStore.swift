@@ -119,6 +119,25 @@ final class APITesterStore: ObservableObject {
     // construct and let go out of scope in tests.
     deinit {}
 
+    /// Sets a variable, e.g. from a field picked in a response. An existing
+    /// variable with the same name is replaced in place (and enabled); any
+    /// duplicates of it are dropped. Otherwise it's appended.
+    func setVariable(_ key: String, to value: String) {
+        let name = key.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        var items = variables
+        let matches = { (item: KeyValueItem) in item.key.trimmingCharacters(in: .whitespaces) == name }
+        if let index = items.firstIndex(where: matches) {
+            items[index].value = value
+            items[index].isEnabled = true
+            let kept = items[index].id
+            items.removeAll { matches($0) && $0.id != kept }
+        } else {
+            items.append(KeyValueItem(key: name, value: value))
+        }
+        variables = items
+    }
+
     private static func loadVariables(from defaults: UserDefaults) -> [KeyValueItem] {
         guard let data = defaults.data(forKey: variablesKey),
               let items = try? JSONDecoder().decode([KeyValueItem].self, from: data) else {
@@ -441,6 +460,21 @@ final class APITesterStore: ObservableObject {
             loadActiveTabIntoEditing()
         }
         persistTabs()
+    }
+
+    /// Moves a tab to `index` in the strip (clamped). The active tab is unchanged.
+    func moveTab(id: OpenTab.ID, to index: Int) {
+        guard let from = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let to = min(max(index, 0), tabs.count - 1)
+        guard to != from else { return }
+        tabs.insert(tabs.remove(at: from), at: to)
+        persistTabs()
+    }
+
+    /// Moves a tab one or more places left (negative) or right (positive).
+    func moveTab(id: OpenTab.ID, by offset: Int) {
+        guard let from = tabs.firstIndex(where: { $0.id == id }) else { return }
+        moveTab(id: id, to: from + offset)
     }
 
     func openEphemeralGet(url: URL) {

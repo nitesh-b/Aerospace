@@ -48,4 +48,11 @@ final class InjectorRouteTests: XCTestCase {
     func testPostToCheckIsNotFound() {
         XCTAssertEqual(InjectorRoute.match(method: "POST", path: "/injector/check"), .notFound)
     }
+
+    func testMatchesOTAFileForGetAndHead() {
+        let path = "/ota/myapp/ios/staging/manifest.json"
+        XCTAssertEqual(InjectorRoute.match(method: "GET", path: path), .otaFile(path: path))
+        XCTAssertEqual(InjectorRoute.match(method: "HEAD", path: path + "?_=1"), .otaFile(path: path + "?_=1"))
+        XCTAssertEqual(InjectorRoute.match(method: "POST", path: path), .notFound)
+    }
 }

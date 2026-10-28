@@ -3,7 +3,8 @@
 //  Aerospace
 //
 //  A tiny HTTP server built on Apple's Network framework (no third-party
-//  dependencies), serving Injector's release-check and bundle-download
+//  dependencies), serving Injector's static OTA folder at /ota/* (the same
+//  layout uploaded to S3) plus the older release-check and bundle-download
 //  routes. Structurally mirrors HTTPLogServer but is a separate listener on
 //  its own port, kept independent so Logger's server is untouched.
 //
@@ -16,6 +17,8 @@ import Network
 nonisolated enum InjectorRoute: Equatable {
     case check(app: String, platform: String, channel: String, nativeVersion: String)
     case bundleDownload(releaseId: String)
+    /// A file from the static OTA folder; `path` is the full request path.
+    case otaFile(path: String)
     case health
     case options
     case badRequest(String)
@@ -37,6 +40,9 @@ nonisolated enum InjectorRoute: Equatable {
                          nativeVersion: query["nativeVersion"] ?? "0")
         case ("GET", let p) where p.hasPrefix(bundlePrefix):
             return .bundleDownload(releaseId: String(p.dropFirst(bundlePrefix.count)))
+        case ("GET", let p) where p.hasPrefix(InjectorOTAFolder.routePrefix),
+             ("HEAD", let p) where p.hasPrefix(InjectorOTAFolder.routePrefix):
+            return .otaFile(path: path)
         case ("GET", "/health"), ("HEAD", "/health"):
             return .health
         case ("OPTIONS", _):
@@ -73,6 +79,9 @@ nonisolated final class HTTPInjectorServer: @unchecked Sendable {
     /// Called on the server's queue to answer a `/injector/bundle/<id>`
     /// request. Return nil if no bundle exists for that release id.
     var onBundleRequest: (@Sendable (_ releaseId: String) -> Data?)?
+    /// Called on the server's queue to resolve a `/ota/*` request to a file
+    /// in the static OTA folder.
+    var onOTAFileRequest: (@Sendable (_ requestPath: String) -> InjectorOTAFolder.Resolution)?
     /// Called on the server's queue whenever the listener state changes.
     var onStateChange: (@Sendable (ServerState) -> Void)?
 
@@ -223,6 +232,8 @@ nonisolated final class HTTPInjectorServer: @unchecked Sendable {
                 return
             }
             respondBinary(connection, status: 200, reason: "OK", data: data)
+        case .otaFile(let path):
+            serveOTAFile(path, includeBody: request.method != "HEAD", on: connection)
         case .health:
             respond(connection, status: 200, reason: "OK", json: ["status": "healthy"])
         case .options:
@@ -232,6 +243,28 @@ nonisolated final class HTTPInjectorServer: @unchecked Sendable {
         case .notFound:
             respond(connection, status: 404, reason: "Not Found",
                     json: ["error": "No route for \(request.method) \(request.path)"])
+        }
+    }
+
+    // MARK: - OTA files
+
+    private func serveOTAFile(_ path: String, includeBody: Bool, on connection: NWConnection) {
+        switch onOTAFileRequest?(path) ?? .notFound {
+        case .file(let url, let mimeType):
+            guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else {
+                respond(connection, status: 500, reason: "Internal Server Error",
+                        json: ["error": "Could not read \(url.lastPathComponent)"])
+                return
+            }
+            // Manifests must never be served stale; release files are
+            // immutable but stay uncached locally so republishing is simple.
+            sendResponse(connection, status: 200, reason: "OK", contentType: mimeType, body: data,
+                         close: false, includeBody: includeBody,
+                         extraHeaders: ["Cache-Control": "no-cache"])
+        case .forbidden:
+            respond(connection, status: 403, reason: "Forbidden", json: ["error": "Forbidden"])
+        case .notFound:
+            respond(connection, status: 404, reason: "Not Found", json: ["error": "Not found"])
         }
     }
 
@@ -254,18 +287,22 @@ nonisolated final class HTTPInjectorServer: @unchecked Sendable {
     }
 
     private func sendResponse(_ connection: NWConnection, status: Int, reason: String,
-                              contentType: String, body: Data, close: Bool) {
+                              contentType: String, body: Data, close: Bool,
+                              includeBody: Bool = true, extraHeaders: [String: String] = [:]) {
         var head = "HTTP/1.1 \(status) \(reason)\r\n"
         head += "Content-Type: \(contentType)\r\n"
         head += "Content-Length: \(body.count)\r\n"
         head += "Access-Control-Allow-Origin: *\r\n"
         head += "Access-Control-Allow-Headers: Content-Type\r\n"
-        head += "Access-Control-Allow-Methods: GET, OPTIONS\r\n"
+        head += "Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n"
+        for (name, value) in extraHeaders.sorted(by: { $0.key < $1.key }) {
+            head += "\(name): \(value)\r\n"
+        }
         if close { head += "Connection: close\r\n" }
         head += "\r\n"
 
         var response = Data(head.utf8)
-        response.append(body)
+        if includeBody { response.append(body) }
 
         connection.send(content: response, completion: .contentProcessed { _ in
             if close { connection.cancel() }

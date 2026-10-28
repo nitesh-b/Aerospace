@@ -53,6 +53,13 @@ struct InjectorStatusBar: View {
                 .foregroundStyle(.secondary)
                 .help("Total releases published")
 
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([store.otaFolder.root])
+            } label: {
+                Label("OTA Folder", systemImage: "folder")
+            }
+            .help("Served at http://<this Mac>:\(store.port)/ota/ — sync this folder to S3 as-is.")
+
             if store.serverState.isRunning {
                 Button {
                     store.stopServer()

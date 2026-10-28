@@ -29,6 +29,7 @@ nonisolated final class SQLiteInjectorReleaseStore: @unchecked Sendable {
         try exec("PRAGMA journal_mode = WAL;")
         try exec("PRAGMA busy_timeout = 3000;")
         try createSchema()
+        migrate()
     }
 
     deinit {
@@ -58,6 +59,16 @@ nonisolated final class SQLiteInjectorReleaseStore: @unchecked Sendable {
         """)
     }
 
+    /// `ADD COLUMN` fails harmlessly if the column already exists.
+    private func migrate() {
+        let additions = [
+            "ALTER TABLE releases ADD COLUMN files_json TEXT NOT NULL DEFAULT '[]';",
+        ]
+        for statement in additions {
+            _ = sqlite3_exec(db, statement, nil, nil, nil)
+        }
+    }
+
     // MARK: - Writes
 
     func insert(_ release: InjectorRelease) throws {
@@ -65,8 +76,8 @@ nonisolated final class SQLiteInjectorReleaseStore: @unchecked Sendable {
             let sql = """
             INSERT OR REPLACE INTO releases
             (id, app, platform, channel, version, min_native_version, max_native_version,
-             bundle_hash, bundle_path, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+             bundle_hash, bundle_path, created_at, files_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """
             let stmt = try prepare(sql)
             defer { sqlite3_finalize(stmt) }
@@ -80,6 +91,7 @@ nonisolated final class SQLiteInjectorReleaseStore: @unchecked Sendable {
             bindText(stmt, 8, release.bundleHash)
             bindText(stmt, 9, release.bundlePath)
             sqlite3_bind_double(stmt, 10, release.createdAt.timeIntervalSince1970)
+            bindText(stmt, 11, Self.encodeFiles(release.files))
             guard sqlite3_step(stmt) == SQLITE_DONE else {
                 throw SQLiteError.step(lastMessage())
             }
@@ -90,7 +102,7 @@ nonisolated final class SQLiteInjectorReleaseStore: @unchecked Sendable {
 
     private static let selectColumns = """
     id, app, platform, channel, version, min_native_version, max_native_version,
-    bundle_hash, bundle_path, created_at
+    bundle_hash, bundle_path, created_at, files_json
     """
 
     func fetchAll() -> [InjectorRelease] {
@@ -179,8 +191,17 @@ nonisolated final class SQLiteInjectorReleaseStore: @unchecked Sendable {
             maxNativeVersion: columnText(stmt, 6),
             bundleHash: columnText(stmt, 7),
             bundlePath: columnText(stmt, 8),
-            createdAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 9))
+            createdAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 9)),
+            files: Self.decodeFiles(columnText(stmt, 10))
         )
+    }
+
+    private static func encodeFiles(_ files: [InjectorReleaseFile]) -> String {
+        (try? JSONEncoder().encode(files)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+    }
+
+    private static func decodeFiles(_ json: String) -> [InjectorReleaseFile] {
+        (try? JSONDecoder().decode([InjectorReleaseFile].self, from: Data(json.utf8))) ?? []
     }
 
     private func lastMessage() -> String {

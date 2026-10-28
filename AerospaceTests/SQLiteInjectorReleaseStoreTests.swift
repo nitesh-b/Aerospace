@@ -4,6 +4,7 @@
 //
 
 import XCTest
+import SQLite3
 @testable import Aerospace
 
 final class SQLiteInjectorReleaseStoreTests: XCTestCase {
@@ -78,5 +79,34 @@ final class SQLiteInjectorReleaseStoreTests: XCTestCase {
         let store = try makeStore()
         try store.insert(release(id: "findme"))
         XCTAssertEqual(store.release(id: "findme")?.id, "findme")
+    }
+
+    func testFilesRoundTrip() throws {
+        let store = try makeStore()
+        var withFiles = release(id: "f")
+        withFiles.files = [InjectorReleaseFile(path: "main.jsbundle", sha256: "aa"),
+                           InjectorReleaseFile(path: "assets/x.png", sha256: "bb")]
+        try store.insert(withFiles)
+        XCTAssertEqual(store.release(id: "f")?.files, withFiles.files)
+    }
+
+    func testMigratesDatabaseCreatedBeforeFileLists() throws {
+        let path = NSTemporaryDirectory() + "aerospace-injector-legacy-\(UUID().uuidString).sqlite"
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(path, &db), SQLITE_OK)
+        let legacy = """
+        CREATE TABLE releases (id TEXT PRIMARY KEY, app TEXT NOT NULL, platform TEXT NOT NULL,
+            channel TEXT NOT NULL, version TEXT NOT NULL, min_native_version TEXT NOT NULL,
+            max_native_version TEXT NOT NULL, bundle_hash TEXT NOT NULL, bundle_path TEXT NOT NULL,
+            created_at REAL NOT NULL);
+        INSERT INTO releases VALUES ('old', 'myapp', 'ios', 'staging', '1', '1.0', '1.x', 'h', '/tmp/b', 0);
+        """
+        XCTAssertEqual(sqlite3_exec(db, legacy, nil, nil, nil), SQLITE_OK)
+        sqlite3_close(db)
+
+        let store = try SQLiteInjectorReleaseStore(path: path)
+        XCTAssertEqual(store.release(id: "old")?.files, [])
+        try store.insert(release(id: "new"))
+        XCTAssertEqual(store.fetchAll().count, 2)
     }
 }

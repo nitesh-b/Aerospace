@@ -4,7 +4,8 @@
 //
 //  Shows the outcome of the last sent request: a status pill, timing/size,
 //  and a Body / Headers switcher. JSON bodies are rendered via ResponseTextView
-//  using JSONHighlighter.
+//  using JSONHighlighter. Cmd+Shift+= in the body saves the selected JSON
+//  field as a variable.
 //
 
 import SwiftUI
@@ -15,6 +16,8 @@ struct ResponseView: View {
 
     @EnvironmentObject private var store: APITesterStore
     @State private var showFind = false
+    /// Name of the variable just saved from the body, shown briefly.
+    @State private var savedVariable: String?
 
     private enum Pane: String, CaseIterable, Identifiable {
         case body = "Body"
@@ -47,6 +50,12 @@ struct ResponseView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                if let savedVariable {
+                    Label("Saved {\(savedVariable)} to Variables", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .lineLimit(1)
+                        .transition(.opacity)
+                }
                 Label(response.durationText, systemImage: "clock")
                     .foregroundStyle(.secondary)
                 Label(byteText(response.bodyByteCount), systemImage: "arrow.down.circle")
@@ -139,9 +148,20 @@ struct ResponseView: View {
                     text: response.bodyText,
                     isJSON: response.isBodyJSON,
                     onOpenLink: { url in store.openEphemeralGet(url: url) },
+                    onSaveField: saveVariable,
                     showFindBarSignal: $showFind
                 )
             }
+        }
+    }
+
+    private func saveVariable(_ field: JSONField) {
+        store.setVariable(field.key, to: field.value)
+        withAnimation { savedVariable = field.key }
+        let key = field.key
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            if savedVariable == key { withAnimation { savedVariable = nil } }
         }
     }
 

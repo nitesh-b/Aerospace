@@ -21,8 +21,25 @@ struct InjectorRelease: Identifiable, Equatable, Sendable {
     let bundleHash: String
     let bundlePath: String
     let createdAt: Date
+    /// Every file in the release folder (the bundle plus any assets), as
+    /// listed in the static manifest. Empty for releases published before
+    /// the static OTA layout existed; those are left out of the manifest.
+    var files: [InjectorReleaseFile] = []
+
+    /// The bundle's path relative to the release folder.
+    var bundleFileName: String {
+        URL(fileURLWithPath: bundlePath).lastPathComponent
+    }
 
     func isCompatible(withNativeVersion nativeVersion: String) -> Bool {
         InjectorVersion.isCompatible(reported: nativeVersion, min: minNativeVersion, max: maxNativeVersion)
     }
+}
+
+/// One file of a release, addressed relative to the release folder.
+nonisolated struct InjectorReleaseFile: Codable, Equatable, Sendable {
+    /// "/"-separated path relative to the release folder, e.g.
+    /// "main.jsbundle" or "assets/src/images/logo.png".
+    let path: String
+    let sha256: String
 }

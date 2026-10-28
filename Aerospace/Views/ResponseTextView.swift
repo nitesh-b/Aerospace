@@ -3,8 +3,9 @@
 //  Aerospace
 //
 //  AppKit-backed response body: read-only, selectable, monospaced text with
-//  clickable links (Cmd+click opens a new GET tab) and a native find bar
-//  (shown on demand via showFindBarSignal, bound to Cmd+S in ResponseView).
+//  clickable links (Cmd+click opens a new GET tab), Cmd+Shift+= to save the
+//  selected JSON field as a variable, and a native find bar (shown on demand
+//  via showFindBarSignal, bound to Cmd+F in ResponseView).
 //
 
 import SwiftUI
@@ -14,13 +15,14 @@ struct ResponseTextView: NSViewRepresentable {
     let text: String
     let isJSON: Bool
     var onOpenLink: (URL) -> Void
+    var onSaveField: (JSONField) -> Void = { _ in }
     @Binding var showFindBarSignal: Bool
 
-    func makeCoordinator() -> Coordinator { Coordinator(onOpenLink: onOpenLink) }
+    func makeCoordinator() -> Coordinator { Coordinator(onOpenLink: onOpenLink, onSaveField: onSaveField) }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSTextView.scrollableTextView()
-        guard let textView = scroll.documentView as? NSTextView else { return scroll }
+        let scroll = ResponseBodyTextView.scrollableTextView()
+        guard let textView = scroll.documentView as? ResponseBodyTextView else { return scroll }
         textView.isEditable = false
         textView.isSelectable = true
         textView.isRichText = true
@@ -33,6 +35,9 @@ struct ResponseTextView: NSViewRepresentable {
             .foregroundColor: NSColor.linkColor,
             .cursor: NSCursor.pointingHand,
         ]
+        let coordinator = context.coordinator
+        textView.onCommandClickLink = { [weak coordinator] url in coordinator?.onOpenLink(url) }
+        textView.onSaveField = { [weak coordinator] in coordinator?.saveSelectedField() }
         scroll.hasHorizontalScroller = true
         textView.isHorizontallyResizable = true
         textView.textContainer?.widthTracksTextView = false
@@ -44,6 +49,7 @@ struct ResponseTextView: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.onOpenLink = onOpenLink
+        context.coordinator.onSaveField = onSaveField
         guard let textView = scroll.documentView as? NSTextView else { return }
 
         if context.coordinator.renderedText != text || context.coordinator.renderedJSON != isJSON {
@@ -85,20 +91,87 @@ struct ResponseTextView: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var onOpenLink: (URL) -> Void
+        var onSaveField: (JSONField) -> Void
         weak var textView: NSTextView?
         var renderedText: String?
         var renderedJSON: Bool?
 
-        init(onOpenLink: @escaping (URL) -> Void) { self.onOpenLink = onOpenLink }
+        init(onOpenLink: @escaping (URL) -> Void, onSaveField: @escaping (JSONField) -> Void) {
+            self.onOpenLink = onOpenLink
+            self.onSaveField = onSaveField
+        }
 
-        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
-            guard NSEvent.modifierFlags.contains(.command) else { return false } // only Cmd+click acts
-            let url: URL?
-            if let u = link as? URL { url = u }
-            else if let s = link as? String { url = URL(string: s) }
-            else { url = nil }
-            if let url { onOpenLink(url) }
-            return true   // we handled it; don't let AppKit open it in a browser
+        /// Saves the field the selection (or caret) is in; beeps if there isn't one.
+        func saveSelectedField() {
+            guard let textView, let field = JSONField.locate(in: textView.string, selection: textView.selectedRange())
+            else { return NSSound.beep() }
+            onSaveField(field)
+        }
+
+        /// Adds "Save “key” as Variable" for the field under the click, or the
+        /// selection when the click is inside it.
+        func textView(_ view: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
+            guard charIndex != NSNotFound, charIndex <= (view.string as NSString).length else { return menu }
+            let selection = view.selectedRange()
+            let target = selection.length > 0 && NSLocationInRange(charIndex, selection)
+                ? selection : NSRange(location: charIndex, length: 0)
+            guard let field = JSONField.locate(in: view.string, selection: target) else { return menu }
+            let item = NSMenuItem(title: "Save “\(field.key)” as Variable",
+                                  action: #selector(saveField(_:)), keyEquivalent: "+")
+            item.keyEquivalentModifierMask = [.command, .shift]
+            item.target = self
+            item.representedObject = field
+            menu.insertItem(item, at: 0)
+            menu.insertItem(.separator(), at: 1)
+            return menu
+        }
+
+        @objc private func saveField(_ item: NSMenuItem) {
+            if let field = item.representedObject as? JSONField { onSaveField(field) }
+        }
+    }
+}
+
+/// The response body's text view. Cmd+click on a link is handled here, before
+/// AppKit's click tracking: TextKit 2 treats a Cmd-click as a selection click
+/// and never reports the link to the delegate. A plain click still follows
+/// the link in the browser.
+final class ResponseBodyTextView: NSTextView {
+    var onCommandClickLink: ((URL) -> Void)?
+    var onSaveField: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.command), let url = link(at: event) {
+            onCommandClickLink?(url)
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if window?.firstResponder === self, Self.isSaveFieldShortcut(event) {
+            onSaveField?()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    /// Cmd+Shift+= (i.e. Cmd+"+"), or Cmd+Shift with the keypad plus.
+    static func isSaveFieldShortcut(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard flags.contains([.command, .shift]), flags.isDisjoint(with: [.option, .control]) else { return false }
+        return event.charactersIgnoringModifiers == "+" || event.keyCode == 0x18 || event.keyCode == 0x45
+    }
+
+    /// The link under the mouse, if any.
+    func link(at event: NSEvent) -> URL? {
+        guard let window, let storage = textStorage else { return nil }
+        let index = characterIndex(for: window.convertPoint(toScreen: event.locationInWindow))
+        guard index != NSNotFound, index < storage.length else { return nil }
+        switch storage.attribute(.link, at: index, effectiveRange: nil) {
+        case let url as URL: return url
+        case let string as String: return URL(string: string)
+        default: return nil
         }
     }
 }

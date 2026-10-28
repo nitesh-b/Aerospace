@@ -2,7 +2,8 @@
 //  InjectorPublishForm.swift
 //  Aerospace
 //
-//  The publish form: pick a built JS bundle file, tag it with its target
+//  The publish form: pick a built JS bundle file (plus, optionally, the
+//  bundler's --assets-dest folder), tag it with its target
 //  app/platform/channel/native-version range, and publish it as a new
 //  release.
 //
@@ -14,6 +15,7 @@ struct InjectorPublishForm: View {
     @EnvironmentObject private var store: InjectorStore
 
     @State private var bundleURL: URL?
+    @State private var assetsURL: URL?
     @State private var app = ""
     @State private var platform = "ios"
     @State private var channel = "staging"
@@ -37,6 +39,19 @@ struct InjectorPublishForm: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
+                HStack {
+                    Button {
+                        chooseAssets()
+                    } label: {
+                        Label(assetsURL?.lastPathComponent ?? "Choose Assets Folder (Optional)…",
+                              systemImage: "folder.badge.plus")
+                    }
+                    if assetsURL != nil {
+                        Button("Clear") { assetsURL = nil }
+                    }
+                }
+                .help("The folder passed to the bundler's --assets-dest. Without it, images "
+                      + "won't load from an OTA bundle.")
             }
 
             Section("Target") {
@@ -77,13 +92,25 @@ struct InjectorPublishForm: View {
         }
     }
 
+    private func chooseAssets() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            assetsURL = url
+        }
+    }
+
     private func publish() {
         guard let bundleURL else { return }
         let published = store.publish(
-            bundleURL: bundleURL, app: app, platform: platform, channel: channel, version: version,
-            minNativeVersion: minNativeVersion, maxNativeVersion: maxNativeVersion)
+            bundleURL: bundleURL, assetsURL: assetsURL, app: app, platform: platform, channel: channel,
+            version: version, minNativeVersion: minNativeVersion, maxNativeVersion: maxNativeVersion)
         if published {
             self.bundleURL = nil
+            assetsURL = nil
             version = ""
         }
     }
